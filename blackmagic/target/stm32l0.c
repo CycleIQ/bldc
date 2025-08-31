@@ -73,6 +73,7 @@
 
 */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "general.h"
@@ -766,3 +767,5 @@ done:
         stm32lx_nvm_lock(t, nvm);
         return true;
 }
+
+#pragma GCC pop_options

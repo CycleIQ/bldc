@@ -9,4 +9,4 @@ HWSRC =	\
 	hwconf/si8900.c \
 	hwconf/shutdown.c \
 
-HWINC = hwconf \
+HWINC = hwconf

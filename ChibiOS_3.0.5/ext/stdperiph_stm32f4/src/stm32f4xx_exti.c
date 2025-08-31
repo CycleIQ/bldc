@@ -64,6 +64,7 @@
   ******************************************************************************
   */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 /* Includes ------------------------------------------------------------------*/
@@ -294,6 +295,8 @@ void EXTI_ClearITPendingBit(uint32_t EXTI_Line)
   
   EXTI->PR = EXTI_Line;
 }
+
+#pragma GCC pop_options
 
 /**
   * @}

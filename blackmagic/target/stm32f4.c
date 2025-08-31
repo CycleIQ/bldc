@@ -32,6 +32,7 @@
  *    manual
  */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "general.h"
@@ -732,3 +733,5 @@ static bool stm32f4_cmd_psize(target *t, int argc, char *argv[])
 	}
 	return true;
 }
+
+#pragma GCC pop_options

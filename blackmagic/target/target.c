@@ -18,6 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "general.h"
@@ -570,3 +571,5 @@ int tc_system(target *t, target_addr cmd, size_t cmdlen)
 	}
 	return t->tc->system(t->tc, cmd, cmdlen);
 }
+
+#pragma GCC pop_options

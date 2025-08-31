@@ -80,6 +80,7 @@
   ******************************************************************************
   */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 /* Includes ------------------------------------------------------------------*/
@@ -289,6 +290,8 @@ void WWDG_ClearFlag(void)
 {
   WWDG->SR = (uint32_t)RESET;
 }
+
+#pragma GCC pop_options
 
 /**
   * @}

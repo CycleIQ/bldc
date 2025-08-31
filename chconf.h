@@ -485,17 +485,13 @@
   /* System tick event code here.*/                                         \
 }
 
-#ifndef __ASSEMBLER__
-void main_stop_motor_and_reset(void);
-#endif
-
 /**
  * @brief   System halt hook.
  * @details This hook is invoked in case to a system halting error before
  *          the system is halted.
  */
 #define CH_CFG_SYSTEM_HALT_HOOK(reason) {                                   \
-  main_stop_motor_and_reset();                                              \
+  /* System halt code here.*/                                               \
 }
 
 /** @} */

@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "app.h"
@@ -76,7 +77,7 @@ void app_set_configuration(app_configuration *conf) {
 	}
 
 #if CAN_ENABLE
-	comm_can_set_baud(conf->can_baud_rate, 0);
+	comm_can_set_baud(conf->can_baud_rate);
 #endif
 
 	imu_init(&conf->imu_conf);
@@ -219,3 +220,4 @@ unsigned short app_calc_crc(app_configuration* conf) {
 	return crc_new;
 }
 
+#pragma GCC pop_options

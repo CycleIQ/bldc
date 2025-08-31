@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "rfhelp.h"
@@ -367,3 +368,5 @@ void rfhelp_power_up(void) {
 	rf_power_up();
 	chMtxUnlock(&rf_mutex);
 }
+
+#pragma GCC pop_options

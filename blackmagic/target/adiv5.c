@@ -22,6 +22,7 @@
  * ARM Debug Interface v5 Architecure Specification, ARM doc IHI0031A.
  */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "general.h"
@@ -600,3 +601,5 @@ uint32_t adiv5_ap_read(ADIv5_AP_t *ap, uint16_t addr)
 	ret = adiv5_dp_read(ap->dp, addr);
 	return ret;
 }
+
+#pragma GCC pop_options

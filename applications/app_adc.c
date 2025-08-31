@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "app.h"
@@ -49,7 +50,7 @@
 
 // Threads
 static THD_FUNCTION(adc_thread, arg);
-__attribute__((section(".ram4"))) static THD_WORKING_AREA(adc_thread_wa, 512);
+static THD_WORKING_AREA(adc_thread_wa, 512);
 
 // Private variables
 static volatile adc_config config;
@@ -639,3 +640,5 @@ static THD_FUNCTION(adc_thread, arg) {
 		}
 	}
 }
+
+#pragma GCC pop_options

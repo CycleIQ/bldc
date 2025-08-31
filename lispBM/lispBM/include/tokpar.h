@@ -37,8 +37,7 @@
 #define TOKCLOSECURL    13u     // "}"
 #define TOKCONSTSTART   14u     // "@const-start"
 #define TOKCONSTEND     15u     // "@const-end"
-#define TOKOPENARRAY    16u     // "[|"
-#define TOKCLOSEARRAY   17u     // "|]"
+#define TOKCONSTSYMSTR  16u     // "@const-symbol-strings"
 
 #define TOKTYPEBYTE     100u
 #define TOKTYPEI        101u
@@ -70,9 +69,9 @@
 
 #define TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH 256
 
-// The contents of tokpar_sym_str is reset every time
-// tok_symbol or tok_string is run.
-extern char tokpar_sym_str[TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH+1];
+// This is shared state between all ongoing read tasks. Maybe risky?
+// Need to take care when dealing with this array in the reader.
+extern char tokpar_sym_str[TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH];
 
 #ifdef __cplusplus
 extern "C" {

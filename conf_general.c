@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "conf_general.h"
@@ -63,7 +64,7 @@ __attribute__((section(".ram4"))) volatile backup_data g_backup;
 static bool read_eeprom_var(eeprom_var *v, int address, uint16_t base);
 static bool store_eeprom_var(eeprom_var *v, int address, uint16_t base);
 
-__attribute__((section(".text2"))) void conf_general_init(void) {
+void conf_general_init(void) {
 	// First, make sure that all relevant virtual addresses are assigned for page swapping.
 	memset(VirtAddVarTab, 0, sizeof(VirtAddVarTab));
 
@@ -144,15 +145,7 @@ __attribute__((section(".text2"))) void conf_general_init(void) {
  * a page swap might longer than the capacitors have voltage left, which could make cause the motor and
  * app config to get lost.
  */
-__attribute__((section(".text2"))) bool conf_general_store_backup_data(void) {
-	mc_interface_ignore_input_both(5000);
-	mc_interface_release_motor_override_both();
-
-	if (!mc_interface_wait_for_motor_release_both(3.0)) {
-		return 100;
-	}
-
-	utils_sys_lock_cnt();
+bool conf_general_store_backup_data(void) {
 	timeout_configure_IWDT_slowest();
 
 	bool is_ok = true;
@@ -172,11 +165,9 @@ __attribute__((section(".text2"))) bool conf_general_store_backup_data(void) {
 			break;
 		}
 	}
-
 	FLASH_Lock();
+
 	timeout_configure_IWDT();
-	mc_interface_ignore_input_both(100);
-	utils_sys_unlock_cnt();
 
 	return is_ok;
 }
@@ -193,8 +184,8 @@ __attribute__((section(".text2"))) bool conf_general_store_backup_data(void) {
  * @return
  * true for success, false if variable was not found.
  */
-__attribute__((section(".text2"))) bool conf_general_read_eeprom_var_hw(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS_HW) {
+bool conf_general_read_eeprom_var_hw(eeprom_var *v, int address) {
+	if (address < 0 || address > (EEPROM_VARS_HW - 1)) {
 		return false;
 	}
 	return read_eeprom_var(v, address, EEPROM_BASE_HW);
@@ -212,8 +203,8 @@ __attribute__((section(".text2"))) bool conf_general_read_eeprom_var_hw(eeprom_v
  * @return
  * true for success, false if variable was not found.
  */
-__attribute__((section(".text2"))) bool conf_general_read_eeprom_var_custom(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS_CUSTOM) {
+bool conf_general_read_eeprom_var_custom(eeprom_var *v, int address) {
+	if (address < 0 || address > (EEPROM_VARS_CUSTOM - 1)) {
 		return false;
 	}
 	return read_eeprom_var(v, address, EEPROM_BASE_CUSTOM);
@@ -231,8 +222,8 @@ __attribute__((section(".text2"))) bool conf_general_read_eeprom_var_custom(eepr
  * @return
  * true for success, false if something went wrong.
  */
-__attribute__((section(".text2"))) bool conf_general_store_eeprom_var_hw(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS_HW) {
+bool conf_general_store_eeprom_var_hw(eeprom_var *v, int address) {
+	if (address < 0 || address > (EEPROM_VARS_HW - 1)) {
 		return false;
 	}
 	return store_eeprom_var(v, address, EEPROM_BASE_HW);
@@ -250,14 +241,14 @@ __attribute__((section(".text2"))) bool conf_general_store_eeprom_var_hw(eeprom_
  * @return
  * true for success, false if something went wrong.
  */
-__attribute__((section(".text2"))) bool conf_general_store_eeprom_var_custom(eeprom_var *v, int address) {
-	if (address < 0 || address >= EEPROM_VARS_CUSTOM) {
+bool conf_general_store_eeprom_var_custom(eeprom_var *v, int address) {
+	if (address < 0 || address > (EEPROM_VARS_CUSTOM - 1)) {
 		return false;
 	}
 	return store_eeprom_var(v, address, EEPROM_BASE_CUSTOM);
 }
 
-__attribute__((section(".text2"))) static bool read_eeprom_var(eeprom_var *v, int address, uint16_t base) {
+static bool read_eeprom_var(eeprom_var *v, int address, uint16_t base) {
 	bool is_ok = true;
 	uint16_t var0, var1;
 
@@ -272,21 +263,13 @@ __attribute__((section(".text2"))) static bool read_eeprom_var(eeprom_var *v, in
 	return is_ok;
 }
 
-__attribute__((section(".text2"))) static bool store_eeprom_var(eeprom_var *v, int address, uint16_t base) {
+static bool store_eeprom_var(eeprom_var *v, int address, uint16_t base) {
 	bool is_ok = true;
 	uint16_t var0, var1;
 
 	var0 = v->as_u32 >> 16;
 	var1 = v->as_u32 & 0xFFFF;
 
-	mc_interface_ignore_input_both(5000);
-	mc_interface_release_motor_override_both();
-
-	if (!mc_interface_wait_for_motor_release_both(3.0)) {
-		return 100;
-	}
-
-	utils_sys_lock_cnt();
 	timeout_configure_IWDT_slowest();
 
 	FLASH_Unlock();
@@ -304,9 +287,8 @@ __attribute__((section(".text2"))) static bool store_eeprom_var(eeprom_var *v, i
 	}
 
 	FLASH_Lock();
+
 	timeout_configure_IWDT();
-	mc_interface_ignore_input_both(100);
-	utils_sys_unlock_cnt();
 
 	return is_ok;
 }
@@ -317,7 +299,7 @@ __attribute__((section(".text2"))) static bool store_eeprom_var(eeprom_var *v, i
  * @param conf
  * A pointer to a app_configuration struct to write the read configuration to.
  */
-__attribute__((section(".text2"))) void conf_general_read_app_configuration(app_configuration *conf) {
+void conf_general_read_app_configuration(app_configuration *conf) {
 	bool is_ok = true;
 	uint8_t *conf_addr = (uint8_t*)conf;
 	uint16_t var;
@@ -356,15 +338,33 @@ __attribute__((section(".text2"))) void conf_general_read_app_configuration(app_
  * @param conf
  * A pointer to the configuration that should be stored.
  */
-__attribute__((section(".text2"))) bool conf_general_store_app_configuration(app_configuration *conf) {
-	mc_interface_ignore_input_both(5000);
-	mc_interface_release_motor_override_both();
+bool conf_general_store_app_configuration(app_configuration *conf) {
+	int motor_old = mc_interface_get_motor_thread();
 
-	if (!mc_interface_wait_for_motor_release_both(3.0)) {
+	mc_interface_select_motor_thread(1);
+	mc_interface_unlock();
+	mc_interface_release_motor();
+	mc_interface_lock();
+
+	if (!mc_interface_wait_for_motor_release(2.0)) {
+		mc_interface_unlock();
+		mc_interface_select_motor_thread(motor_old);
+		return false;
+	}
+
+	mc_interface_select_motor_thread(2);
+	mc_interface_unlock();
+	mc_interface_release_motor();
+	mc_interface_lock();
+
+	if (!mc_interface_wait_for_motor_release(2.0)) {
+		mc_interface_unlock();
+		mc_interface_select_motor_thread(motor_old);
 		return false;
 	}
 
 	utils_sys_lock_cnt();
+
 	timeout_configure_IWDT_slowest();
 
 	bool is_ok = true;
@@ -386,11 +386,20 @@ __attribute__((section(".text2"))) bool conf_general_store_app_configuration(app
 			break;
 		}
 	}
-
 	FLASH_Lock();
+
 	timeout_configure_IWDT();
-	mc_interface_ignore_input_both(100);
+
+	chThdSleepMilliseconds(100);
+
+	mc_interface_select_motor_thread(1);
+	mc_interface_unlock();
+	mc_interface_select_motor_thread(2);
+	mc_interface_unlock();
+
 	utils_sys_unlock_cnt();
+
+	mc_interface_select_motor_thread(motor_old);
 
 	return is_ok;
 }
@@ -401,7 +410,7 @@ __attribute__((section(".text2"))) bool conf_general_store_app_configuration(app
  * @param conf
  * A pointer to a mc_configuration struct to write the read configuration to.
  */
-__attribute__((section(".text2"))) void conf_general_read_mc_configuration(mc_configuration *conf, bool is_motor_2) {
+void conf_general_read_mc_configuration(mc_configuration *conf, bool is_motor_2) {
 	bool is_ok = true;
 	uint8_t *conf_addr = (uint8_t*)conf;
 	uint16_t var;
@@ -440,15 +449,33 @@ __attribute__((section(".text2"))) void conf_general_read_mc_configuration(mc_co
  * @param conf
  * A pointer to the configuration that should be stored.
  */
-__attribute__((section(".text2"))) bool conf_general_store_mc_configuration(mc_configuration *conf, bool is_motor_2) {
-	mc_interface_ignore_input_both(5000);
-	mc_interface_release_motor_override_both();
+bool conf_general_store_mc_configuration(mc_configuration *conf, bool is_motor_2) {
+	int motor_old = mc_interface_get_motor_thread();
 
-	if (!mc_interface_wait_for_motor_release_both(3.0)) {
+	mc_interface_select_motor_thread(1);
+	mc_interface_unlock();
+	mc_interface_release_motor();
+	mc_interface_lock();
+
+	if (!mc_interface_wait_for_motor_release(2.0)) {
+		mc_interface_unlock();
+		mc_interface_select_motor_thread(motor_old);
+		return false;
+	}
+
+	mc_interface_select_motor_thread(2);
+	mc_interface_unlock();
+	mc_interface_release_motor();
+	mc_interface_lock();
+
+	if (!mc_interface_wait_for_motor_release(2.0)) {
+		mc_interface_unlock();
+		mc_interface_select_motor_thread(motor_old);
 		return false;
 	}
 
 	utils_sys_lock_cnt();
+
 	timeout_configure_IWDT_slowest();
 
 	bool is_ok = true;
@@ -470,16 +497,25 @@ __attribute__((section(".text2"))) bool conf_general_store_mc_configuration(mc_c
 			break;
 		}
 	}
-
 	FLASH_Lock();
+
 	timeout_configure_IWDT();
-	mc_interface_ignore_input_both(100);
+
+	chThdSleepMilliseconds(100);
+
+	mc_interface_select_motor_thread(1);
+	mc_interface_unlock();
+	mc_interface_select_motor_thread(2);
+	mc_interface_unlock();
+
 	utils_sys_unlock_cnt();
+
+	mc_interface_select_motor_thread(motor_old);
 
 	return is_ok;
 }
 
-__attribute__((section(".text2"))) bool conf_general_detect_motor_param(float current, float min_rpm, float low_duty,
+bool conf_general_detect_motor_param(float current, float min_rpm, float low_duty,
 		float *int_limit, float *bemf_coupling_k, int8_t *hall_table, int *hall_res) {
 
 	int ok_steps = 0;
@@ -707,7 +743,7 @@ __attribute__((section(".text2"))) bool conf_general_detect_motor_param(float cu
  * @return
  * True for success, false otherwise.
  */
-__attribute__((section(".text2"))) bool conf_general_measure_flux_linkage(float current, float duty,
+bool conf_general_measure_flux_linkage(float current, float duty,
 		float min_erpm, float res, float *linkage) {
 
 	mc_configuration *mcconf = mempools_alloc_mcconf();
@@ -868,7 +904,7 @@ __attribute__((section(".text2"))) bool conf_general_measure_flux_linkage(float 
 }
 
 /* Calculate DTG register */
-__attribute__((section(".text2"))) uint8_t conf_general_calculate_deadtime(float deadtime_ns, float core_clock_freq) {
+uint8_t conf_general_calculate_deadtime(float deadtime_ns, float core_clock_freq) {
 	uint8_t DTG = 0;
 	float timebase = 1.0 / (core_clock_freq / 1000000.0) * 1000.0;
 
@@ -932,7 +968,7 @@ __attribute__((section(".text2"))) uint8_t conf_general_calculate_deadtime(float
  * @return
  * Fault code
  */
-__attribute__((section(".text2"))) int conf_general_measure_flux_linkage_openloop(float current, float duty,
+int conf_general_measure_flux_linkage_openloop(float current, float duty,
 		float erpm_per_sec, float res, float ind, float *linkage,
 		float *linkage_undriven, float *undriven_samples, bool *result) {
 
@@ -1226,7 +1262,7 @@ __attribute__((section(".text2"))) int conf_general_measure_flux_linkage_openloo
  * Send motor configuration if the detection succeeds.
  *
  * @result
- * 2: AS5147 detected successfully
+ * 2: AS5047 detected successfully
  * 1: Hall sensors detected successfully
  * 0: No sensors detected and sensorless mode applied successfully
  * -1: Detection failed
@@ -1234,7 +1270,7 @@ __attribute__((section(".text2"))) int conf_general_measure_flux_linkage_openloo
  * @return
  * The fault code
  */
-__attribute__((section(".text2"))) int conf_general_autodetect_apply_sensors_foc(float current,
+int conf_general_autodetect_apply_sensors_foc(float current,
 											  bool store_mcconf_on_success, bool send_mcconf_on_success, int *result) {
 	*result = -1;
 	int fault = FAULT_CODE_NONE;
@@ -1408,7 +1444,7 @@ __attribute__((section(".text2"))) int conf_general_autodetect_apply_sensors_foc
 	return fault;
 }
 
-__attribute__((section(".text2"))) void conf_general_calc_apply_foc_cc_kp_ki_gain(mc_configuration *mcconf, float tc) {
+void conf_general_calc_apply_foc_cc_kp_ki_gain(mc_configuration *mcconf, float tc) {
 	float r = mcconf->foc_motor_r;
 	float l = mcconf->foc_motor_l;
 	float lambda = mcconf->foc_motor_flux_linkage;
@@ -1424,7 +1460,7 @@ __attribute__((section(".text2"))) void conf_general_calc_apply_foc_cc_kp_ki_gai
 	mcconf->foc_observer_gain = gain * 1e6;
 }
 
-__attribute__((section(".text2"))) static int measure_r_l_imax(float current_min, float current_max,
+static int measure_r_l_imax(float current_min, float current_max,
 							float max_power_loss, float *r, float *l, float *ld_lq_diff, float *i_max) {
 	float current_start = current_max / 50;
 	if (current_start < (current_min * 1.1)) {
@@ -2165,3 +2201,5 @@ int conf_general_detect_apply_all_foc_can(bool detect_can, float max_power_loss,
 
 	return res;
 }
+
+#pragma GCC pop_options

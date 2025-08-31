@@ -1,23 +1,3 @@
-### 6.06
-#### TBD
-* LispBM:
-	* New core extansions, optimization and much more unit testing.
-	* Many bug fixes in the reader.
-	* Moved const memory into its own flash sector.
-	* Added const-heap-erase extension.
-	* Added mutex support.
-	* Added can-ping extension.
-	* LBM Image support
-		* Super fast boot possible
-		* Much easier to use const blocks
-		* Rebuild image and const data when needed
-* New offset calibration modes and options.
-* Automatic offset calibration support.
-* Added HFI ambiguity resolution modes using id injection.
-* Support for coordinated CAN baudrate update.
-* Overmodulation support.
-* Added PWM and PWM+ABI encoder modes.
-
 ### 6.05
 #### 2024-08-19
 * LispBM:

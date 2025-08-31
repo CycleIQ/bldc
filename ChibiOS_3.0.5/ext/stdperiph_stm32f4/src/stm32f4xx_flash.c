@@ -68,6 +68,7 @@
   ******************************************************************************
   */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 /* Includes ------------------------------------------------------------------*/
@@ -1609,6 +1610,8 @@ FLASH_Status FLASH_WaitForLastOperation(void)
   /* Return the operation status */
   return status;
 }
+
+#pragma GCC pop_options
 
 /**
   * @}

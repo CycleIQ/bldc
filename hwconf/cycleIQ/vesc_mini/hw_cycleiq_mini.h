@@ -1,9 +1,9 @@
 /*
-	Copyright 2018 Benjamin Vedder	benjamin@vedder.se
+    Copyright 2018 Benjamin Vedder	benjamin@vedder.se
 
-	This file is part of the VESC firmware.
+    This file is part of the VESC firmware.
 
-	The VESC firmware is free software: you can redistribute it and/or modify
+    The VESC firmware is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -16,10 +16,17 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-	
+
 #ifndef HW_CYCLEIQ_MINI_H_
 #define HW_CYCLEIQ_MINI_H_
 
 #include "hw_cycleiq_mini_core.h"
+
+#define CYCLEIQ_HAS_1_WIRE_PAS
+#define PAS_BANK GPIOB
+#define PAS_PIN 11
+#define PAS_EXTI_LINE EXTI_Line11
+
+#define TS_INDEX ADC_IND_EXT
 
 #endif /* HW_CYCLEIQ_MINI_H_ */

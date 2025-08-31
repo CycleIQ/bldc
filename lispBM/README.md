@@ -14,31 +14,23 @@ This is the VESC-integration of [lispBM](https://github.com/svenssonjoel/lispBM)
 
 [LispBM Language Reference](lispBM/doc/lbmref.md)
 
-The language reference is probably the most important document to read when working with with LBM. It describes the concepts of the language and, importantly, all basic functions it provides for various operations.
+## Programming Manual
 
-**Libraries**  
+This is the work-in-progress programming manual for LispBM. Note that the examples in the manual use the REPL quite a lot. All of them also work in the VESC Tool REPL (which is below the console below the code editor) when you are connected to a VESC and will be executed on the VESC itself. The results of the commands will be printed in the console. From the VESC Tool REPL you also have access to all functions and variables in the program that you have uploaded.
 
-[Libraries](lispBM/doc/dynref.md)
-
-Most of these are available on ESC and Express. They are loaded dynamically when used the first time.
-
-**LBM Gotchas and Caveats**
-
-[Gotchas](lispBM/doc/gotchas.md)
+[Chapter 1: Introduction to programming in LispBM](lispBM/doc/manual/ch1_introduction.md)  
+[Chapter 2: List Processing](lispBM/doc/manual/ch2_list_processing.md)  
+[Chapter 3: Concurrency](lispBM/doc/manual/ch3_concurrency.md)
 
 ## VESC Express Libraries
 
 The VESC Express has some extra libraries that are documented in separate documents.
 
-**Display Driver**  
+**VESC Express Display Driver**  
 
-[Display Driver](lispBM/doc/displayref.md)
+[VESC Express Display Driver](https://github.com/vedderb/vesc_express/blob/main/main/display/README.md)
 
 The display driver allows driving many common displays using SPI, such as the ST7789, ST7735, ILI9341, ILI9488, SH8501, SSD1306 and SSD1351. There are accelerated rendering and font extensions that can be used from LispBM.  
-
-**TTF Font Renderer for Display Driver**  
-
-[TTF Font Renderer](lispBM/doc/ttfref.md)
 
 **VESC Express Wifi and TCP**  
 
@@ -99,7 +91,7 @@ printed on a separate line.
 Similar to `print`, but only takes one string as an argument and prints it without
 quotes. The string extensions can be used to format the output.
 
-**Note:**  
+**Note**  
 This extension can print longer strings than `print`. `print` will trim any
 output over 256 bytes, while this extension only trims strings over 400 bytes.
 
@@ -109,55 +101,6 @@ Example:
 (puts "Hello World")
 > Hello World
 ```
-
----
-
-#### set-print-prefix
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.06+ |
-
-```clj
-(set-print-prefix str)
-```
-
-Adds a prefix to prints that are sent to the repl in VESC Tool. Useful when
-multiple devices print to the repl over CAN at the same time for determining
-which print comes from which device. The prefix can't be longer than 50 bytes
-(including the null byte), and `str` will be trimmed if longer. The value is
-remembered until the next power cycle.
-
-**Note:**  
-This is applied to all text sent to the repl, not just text created by
-calling `print` or `puts`.
-
-
-Example:
-
-```clj
-(set-print-prefix "dev-1| ")
-(puts "This message has\na clear origin!")
-```
-which outputs
-```
-dev-1| This message has
-dev-1| a clear origin!
-```
-
----
-
-#### set-fw-name
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(set-fw-name str)
-```
-
-Set (or override if already set in the firmware) firmware name. The firmware name is printed in the CAN-list in VESC Tool when it is set. It can also be used by packages to determine if they are compatible with the connected hardware.
 
 ---
 
@@ -293,10 +236,7 @@ Get value from BMS. Examples:
 (get-bms-val 'bms-hum) ; Humidity
 (get-bms-val 'bms-pres) ; Pressure in PA (Added in 6.05)
 (get-bms-val 'bms-temp-cell-max) ; Maximum cell temperature
-(get-bms-val 'bms-v-cell-min) ; Minimum cell voltage (added in 6.06)
-(get-bms-val 'bms-v-cell-max) ; Maximum cell voltage (added in 6.06)
 (get-bms-val 'bms-soc) ; State of charge (0.0 to 1.0)
-(get-bms-val 'bms-soh) ; State of health (0.0 to 1.0)
 (get-bms-val 'bms-can-id) ; CAN ID of BMS
 (get-bms-val 'bms-ah-cnt-chg-total) ; Total ah charged
 (get-bms-val 'bms-wh-cnt-chg-total) ; Total wh charged
@@ -304,21 +244,7 @@ Get value from BMS. Examples:
 (get-bms-val 'bms-wh-cnt-dis-total) ; Total wh discharged
 (get-bms-val 'bms-msg-age) ; Age of last message from BMS in seconds
 (get-bms-val 'bms-chg-allowed) ; Charging allowed (Added in 6.05, Express only)
-(get-bms-val 'bms-data-version) ; Data version (added in 6.06)
-(get-bms-val 'bms-status) ; Status string (added in 6.06)
 ```
-
-**Note**  
-In firmware 6.06 the following temperature sensor convention was introduced for bms-temps-adc. So when using (get-bms-val 'bms-temps-adc 2) the maximum cell temperature should be returned. If a temperature returns less than -280 degC that reading is not applicable on that BMS. Keep in mind that it will take some time before all BMSes follow this convention after the 6.06 release. (get-bms-val 'bms-data-version) should return 1 if this convention is used.
-
-| Sensor Index | Function |
-|---|---|
-| 0 | Balance IC |
-| 1 | Cell Min |
-| 2 | Cell Max |
-| 3 | Mosfet Switch |
-| 4 | Ambient Temperature |
-| 5+ | Optional sensors |
 
 ---
 
@@ -401,36 +327,6 @@ Zero current measurement offset on BMS. Has to be done while no current (or char
 
 ---
 
-#### bms-st
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(bms-st can-id)
-```
-
-Run self-test on BMS with can-id. Returns the following list on success, otherwise timeout:
-
-```clj
-(
-    1 ; Balance IC OK
-    1 ; Balamce connection check OK
-    8 ; Cell num (8 Cells)
-    (1 3.691400f32 3.561700f32) ; Cell 1 OK, V_BAL, V_NO_BAL
-    (1 3.687200f32 3.367500f32) ; Cell 2 OK, V_BAL, V_NO_BAL
-    (1 3.687500f32 3.377500f32) ; Cell 3 OK, V_BAL, V_NO_BAL
-    (1 3.688900f32 3.389400f32) ; Cell 4 OK, V_BAL, V_NO_BAL
-    (1 3.690100f32 3.401900f32) ; Cell 5 OK, V_BAL, V_NO_BAL
-    (1 3.688800f32 3.413800f32) ; Cell 6 OK, V_BAL, V_NO_BAL
-    (1 3.689000f32 3.424600f32) ; Cell 7 OK, V_BAL, V_NO_BAL
-    (1 3.688900f32 3.433300f32) ; Cell 8 OK, V_BAL, V_NO_BAL
-)
-```
-
----
-
 #### get-adc
 
 | Platforms | Firmware |
@@ -457,12 +353,6 @@ This is the ADC-channel that the motor temperature sensor goes to. Note: if you 
 
 **Channel 4+:**  
 Some hardware has additional ADC-channels which also can be read with this function. If they are missing the voltage on ADC1 is returned instead.
-
-**Channel 20 (FW6.06+):**  
-Sin/Cos encoder SIN channel
-
-**Channel 21 (FW6.06+):**  
-Sin/Cos encoder COS channel
 
 ---
 
@@ -751,12 +641,10 @@ Read system info parameter param. Example:
 (sysinfo 'has-phase-filters) ; t if hardware has phase filters. ESC only.
 (sysinfo 'uuid) ; STM32 UUID. ESC only.
 (sysinfo 'runtime) ; Total runtime in seconds. ESC only.
-(sysinfo 'odometer) ; Total odometer in meters. ESC only. Added in 6.06.
-(sysinfo 'git-branch) ; Git branch name.
-(sysinfo 'git-hash) ; Git hash of current commit.
+(sysinfo 'git-branch) ; Git branch name. ESC only.
+(sysinfo 'git-hash) ; Git hash of current commit. ESC only.
 (sysinfo 'compiler) ; GCC version, e.g. 7.3.1. ESC only.
 (sysinfo 'hw-type) ; Hardware type, e.g. hw-express. Added in 6.02.
-(sysinfo 'part-running) ; Running partition name. Express only.
 ```
 
 ---
@@ -786,20 +674,6 @@ Get statistics about the selected motor since boot (or since stats-reset). The f
 (stats 'stat-temp-motor-max) ; Maximum motor temp in degC
 (stats 'stat-count-time) ; Time since start of stat collection in seconds
 ```
-
----
-
-#### set-odometer
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(set-odometer meters)
-```
-
-Set persistent odometer counter to meters.
 
 ---
 
@@ -873,22 +747,6 @@ Hold shutdown. When hold is true hardware shutdown will be delayed until hold is
 
 ---
 
-#### const-heap-erase
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(const-heap-erase)
-```
-
-Erase constant heap. This can be used in the beginning of the application to erase the constant memory of the application. That is useful for applications that do not always write the same things to constant memory in the same order after starting. Situations where that can occur is when the application takes different execution paths depending on external events or when writing variables to constant memory that differ based on external events.
-
-Running this command in the beginning of the application should prevent any write-to-flash errors, but the command takes a few seconds to execute and puts some wear on the flash memory. The reader will become slightly slower in const blocks after running this command compared to an application where constant memory already has been written in previous runs.
-
----
-
 #### reboot
 
 | Platforms | Firmware |
@@ -900,28 +758,6 @@ Running this command in the beginning of the application should prevent any writ
 ```
 
 Reboot CPU. Required on the express when e.g. changing wifi-settings.
-
----
-
-#### override-speed
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(overide-speed ovr speed)
-```
-
-Override speed reported to VESC Tool (and to other extensions). The argument speed is the speed to override with in meters per second and the argument ovr is set to 1 for overriding the speed and to 0 for reporting the speed as before. Example:
-
-```clj
-; Override speed with 3.6 km/h
-(overide-speed 1 (/ 12.0 3.6))
-
-; Do not override speed anymore
-(overide-speed 0 0)
-```
 
 ---
 
@@ -1233,20 +1069,6 @@ Run FOC in open loop. Useful to test thermal properties of motors and power stag
 
 ---
 
-#### foc-openloop-phase
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(foc-openloop-phase current phase)
-```
-
-Run FOC in open loop in phase mode. Phase is the electrical position of the openloop-vector in degrees, range 0.0 to 360.0.
-
----
-
 #### foc-beep
 
 | Platforms | Firmware |
@@ -1307,7 +1129,7 @@ Stop playing tones on all channels.
 
 ### Motor Get Commands
 
-**Note:**  
+**Note**  
 If the optional optFilter-argument is 1 in the commands below the result will be the average since that function was called the last time. That is also how the plots are filtered in VESC Tool. Polling realtime data in VESC Tool at the same time will affect the averaging as it uses the same integrator. This function was added in firmware 6.05.
 
 ---
@@ -1478,26 +1300,6 @@ Get FOC estimated motor inductance Henry. Only works while the first HFI is runn
 
 ---
 
-#### get-hfi-res
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(get-hfi-res)
-```
-
-Get HFI result. Only valid when using single or double pulse ambiguity resolution mode. Returns a list with the following valies:
-
-```clj
-(i1 i2 diff)
-```
-
-Where i1 is the delta current for the first voltage, i2 is the response current for the second voltage and diff is the difference between them. This can be used to determine how much ambiguity resolution current is required for a given motor.
-
----
-
 #### get-duty
 
 | Platforms | Firmware |
@@ -1554,20 +1356,6 @@ Same as get-rpm-fast, but with even less filtering. This give the RPM-estimation
 
 ---
 
-#### get-rpm-set
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(get-rpm-set)
-```
-
-Get motor ERPM setpoint for PID speed controller.
-
----
-
 #### get-pos
 
 | Platforms | Firmware |
@@ -1621,20 +1409,6 @@ Get motor temperature.
 ```
 
 Get speed in meters per second. Requires that the number of motor poles, wheel diameter and gear ratio are set up correctly.
-
----
-
-#### get-speed-set
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(get-speed-set)
-```
-
-Get PID speed setpoint in meters per second. Requires that the number of motor poles, wheel diameter and gear ratio are set up correctly.
 
 ---
 
@@ -2336,28 +2110,6 @@ Actively scan the CAN-bus and return a list with devices that responded. This fu
 
 ---
 
-#### can-ping
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.06+ |
-
-```clj
-(can-ping id)
-```
-
-Ping can-device with id. Valid IDs are 0 to 253. If the device responds 0, 1 or 2 is returned, meaning
-
-| Response | HW Type |
-|---|---|
-| 0 | ESC |
-| 1 | Old BMS |
-| 2 | Custom (e.g. Express or new BMS) |
-
-If the device does not respond nil is returned.
-
----
-
 #### can-local-id
 
 | Platforms | Firmware |
@@ -2369,25 +2121,6 @@ If the device does not respond nil is returned.
 ```
 
 Get local CAN ID.
-
----
-
-#### can-update-baud
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.06+ |
-
-```clj
-(can-update-baud kbits)
-```
-
-Update CAN baudrate locally and on connected CAN-devices. kbits is the new baudrate. Note that this is only supported when all CAN-devices have firmware 6.06 or later. If the update fails the CAN-bus can become unusable until the settings are restored manually on each device. Valid baudrates in kbits are 125, 250, 500, 1000, 10, 20, 50, 75 and 100. Example:
-
-```clj
-(can-update-baud 1000) ; Update baudrate to 1 MBit/s
-(can-update-baud 250) ; Update baudrate to 250 KBit/s
-```
 
 ---
 
@@ -2539,7 +2272,7 @@ Enable or disable decoding of the VESC Protocol on the CAN-bus. By default it is
 
 ---
 
-CAN messages are byte arrays of up to 500 bytes that can be sent between devices over CAN-bus. Together with flat values they are useful for e.g. remote code execution. Each CAN-device has 8 different slots to send messages to.
+CAN messages are byte arrays of up to 500 bytes that can be sent between devices over CAN-bus. Together with flat values they are useful for e.g. remote code execution. Each CAN-device has 5 different slots to send messages to.
 
 ---
 
@@ -2923,7 +2656,7 @@ Raw data commands useful for debugging hardware issues.
 
 Get raw current measurements. Motor is the motor index (1 or 2), phase is the phase (1, 2 or 3) and useRaw is whether to convert the measurements to currents or to use raw ADC values.
 
-**Note:**  
+**NOTE**  
 These samples can come from either V0 or V7 depending on when the function is called (although most likely V7 as less other computations happen then), so when the motor is running this is most likely not going to look good, especially if the hardware does not have phase shunts. This function is intended for debugging hardware and returns just was goes into the ADC without any processing.
 
 Example for reading phase B on motor 1 as raw ADC values:
@@ -3610,7 +3343,7 @@ The following selection of app and motor parameters can be read and set from Lis
 'l-min-duty             ; Minimum duty cycle
 'l-max-duty             ; Maximum duty cycle
 'l-watt-min             ; Minimum power regen in W (a negative value)
-'l-watt-max             ; Maximum power in W
+'l-watt-max             ; Maximum power regen in W
 'l-battery-cut-start    ; Voltage where current starts to get reduced
 'l-battery-cut-end      ; Voltage below which current is not allowed
 'l-temp-motor-start     ; Temperature where motor current starts to get reduced
@@ -3671,23 +3404,6 @@ The following selection of app and motor parameters can be read and set from Lis
                         ;    7: FOC_SENSOR_MODE_HFI_V4
                         ;    8: FOC_SENSOR_MODE_HFI_V5
 'm-ntc-motor-beta       ; Beta Value for Motor Thermistor
-'m_encoder_counts       ; ABI encoder counts (FW 6.06)
-'m_sensor_port_mode     ; Sensor port mode (FW 6.06)
-                        ;    0: SENSOR_PORT_MODE_HALL
-                        ;    1: SENSOR_PORT_MODE_ABI
-                        ;    2: SENSOR_PORT_MODE_AS5047_SPI
-                        ;    3: SENSOR_PORT_MODE_AD2S1205
-                        ;    4: SENSOR_PORT_MODE_SINCOS
-                        ;    5: SENSOR_PORT_MODE_TS5700N8501
-                        ;    6: SENSOR_PORT_MODE_TS5700N8501_MULTITURN
-                        ;    7: SENSOR_PORT_MODE_MT6816_SPI_HW
-                        ;    8: SENSOR_PORT_MODE_AS5x47U_SPI
-                        ;    9: SENSOR_PORT_MODE_BISSC
-                        ;    10: SENSOR_PORT_MODE_TLE5012_SSC_SW
-                        ;    11: SENSOR_PORT_MODE_TLE5012_SSC_HW
-                        ;    12: SENSOR_PORT_MODE_CUSTOM_ENCODER
-                        ;    13: SENSOR_PORT_MODE_PWM
-                        ;    14: SENSOR_PORT_MODE_PWM_ABI
 'si-motor-poles         ; Number of motor poles, must be multiple of 2
 'si-gear-ratio          ; Gear ratio (Added in FW 6.05)
 'si-wheel-diameter      ; Wheel diameter in meters (Added in FW 6.05)
@@ -3701,12 +3417,6 @@ The following selection of app and motor parameters can be read and set from Lis
 'foc-motor-r            ; Motor resistance in milliOhm
 'foc-motor-flux-linkage ; Motor flux linkage in milliWeber
 'foc-observer-gain      ; Observer gain x1M
-'foc-hfi-amb-mode       ; HFI Ambiguity Resolve Mode (FW 6.06)
-                        ; 0 : Six Vector
-                        ; 1 : ID Single Pulse
-                        ; 2 : ID Double Pulse
-'foc-hfi-amb-current    ; HFI Ambiguity Resolve Current (FW 6.06)
-'foc-hfi-amb-tres       ; HFI Ambiguity Resolve Threshold (FW 6.06)
 'foc-hfi-voltage-start  ; HFI start voltage (V) (for resolving ambiguity)
 'foc-hfi-voltage-run    ; HFI voltage (V) HFI voltage at min current
 'foc-hfi-voltage-max    ; HFI voltage (V) at max current
@@ -3728,11 +3438,7 @@ The following selection of app and motor parameters can be read and set from Lis
 'foc-sl-openloop-time   ; Stay in openloop for this amount of time
 'foc-temp-comp          ; Use observer temperature compensation
 'foc-temp-comp-base-temp ; Temperature at which parameters were measured
-'foc-offsets-cal-on-boot ; Measure offsets at boot (FW 6.05 only)
-'foc-offsets-cal-mode   ; Offset Calibration Mode (Added in FW 6.06)
-                        ; Bit 0: Calibrate on Boot
-                        ; Bit 1: Enable Write from VESC Tool
-                        ; Bit 2: Auto-calibrate when undriven
+'foc-offsets-cal-on-boot ; Measure offsets at boot (Added in FW 6.05)
 'foc-fw-current-max     ; Maximum field weakening current (Added in FW 6.05)
 'foc-fw-duty-start      ; Duty where field weakening starts (Added in FW 6.05)
 'foc-short-ls-on-zero-duty ; Short low-side FETs on 0 duty (Added in FW 6.05)
@@ -3751,7 +3457,6 @@ The following selection of app and motor parameters can be read and set from Lis
                         ;    9: APP_PAS
                         ;    10: APP_ADC_PAS
 'controller-id          ; VESC CAN ID
-'timeout-msec           ; Motor timeout in milliseconds (Added in FW 6.06)
 'can-baud-rate          ; CAN-bus baud rate (Added in FW 6.05)
                         ; 0: 125K
                         ; 1: 250K
@@ -3825,8 +3530,6 @@ The following selection of app and motor parameters can be read and set from Lis
                         ; 4: 10K
                         ; 5: 20K
                         ; 6: 50K
-                        ; 7: 75K
-                        ; 8: 100K
 'can-status-rate-hz     ; CAN status message rate
 'wifi-mode              ; Wifi mode
                         ; 0: Disabled
@@ -3849,8 +3552,6 @@ The following selection of app and motor parameters can be read and set from Lis
                         ; 3: Enabled with scripting
 'ble-name               ; Device name (also the name that shows up in VESC Tool)
 'ble-pin                ; BLE pin code
-'ble-service-capacity   ; BLE Service Capacity
-'ble-chr-descr-capacity ; BLE Characteristics and Descriptor Capacity
 ```
 
 ---
@@ -4046,51 +3747,6 @@ Run FOC DC offset calibration. calUndriven can be set to true for including the 
 (i0 i1 i2 v0 v1 v2 v0-undriven v1-undriven v2-undriven)
 ```
 
-Since firmware 6.06 the argument calUndriven can be omitted. When it is omitted no calibration is done and the offsets in use are returned.
-
----
-
-#### conf-dc-cal-set
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(conf-dc-cal-set i0 i1 i2 v0 v1 v2 v0-undriven v1-undriven v2-undriven)
-```
-
-Manually set the offsets on the selected motor. Arguments that are set to nil will leave the corresponding offset unchanged. If not all arguments are given the ones left out will not be updated. Example:
-
-```clj
-; Set the i2-offset to 1.1 ADC counts and the v2-offset to 2.3 V. Leave the rest unchanged.
-(conf-dc-cal-set nil nil 1.1 nil nil 2.3)
-```
-
----
-
-#### conf-enc-sincos
-
-| Platforms | Firmware |
-|---|---|
-| ESC | 6.06+ |
-
-```clj
-(conf-enc-sincos optSinAmp optCosAmp optSinOfs optCosOfs optFilter optPhaseCorr)
-```
-
-Configure Sin/Cos encoder. Arguments that are set to nil will leave the corresponding parameter unchanged. If not all arguments are given the ones left out will not be updated. The resulting configuration is returned. If no arguments are given the resulting configuration is returned. Example:
-
-```clj
-(conf-enc-sincos 1.0 1.0 1.65 1.65 0.5 0.0)
-;> (1.0 1.0 1.65 1.65 0.5 0.0)
-
-(conf-enc-sincos)
-;> (1.0 1.0 1.65 1.65 0.5 0.0)
-```
-
-The update will be applied until reboot. To store it permanently conf-store can be used.
-
 ---
 
 #### conf-get-limits
@@ -4113,7 +3769,7 @@ Get all overridden current limits from speed, temperature, voltage, wattage etc.
 
 ### EEPROM (Nonvolatile Storage)
 
-Up to 128 (256 in FW 6.06) variables (int32 or float) can be stored in a nonvolatile memory reserved for LispBM. These variables persist between power cycles and configuration changes, but not between firmware updates. Keep in mind that the motor will be stopped briefly when writing them and that they only can be written a limited number of times (about 100 000 writes) before wear on the flash memory starts to become an issue.
+Up to 128 variables (int32 or float) can be stored in a nonvolatile memory reserved for LispBM. These variables persist between power cycles and configuration changes, but not between firmware updates. Keep in mind that the motor will be stopped briefly when writing them and that they only can be written a limited number of times (about 100 000 writes) before wear on the flash memory starts to become an issue.
 
 ---
 
@@ -4341,34 +3997,6 @@ Example that forever prints "Hello World" every two seconds:
                 (print "Hello World")
                 (sleep 2)
 })))
-```
-
-From firmware 6.06 it is possible to give the thread a name and/or a stack size. That gives the following combinations of possibilities:
-
-```clj
-; No name and default stack size
-(loopwhile-thd () t {
-        (print "Hello World1")
-        (sleep 2)
-})
-
-; No name and stack size 100
-(loopwhile-thd 100 t {
-        (print "Hello Worl2")
-        (sleep 2)
-})
-
-; Name ThdTest and default stack size
-(loopwhile-thd "ThdTest" t {
-        (print "Hello World3")
-        (sleep 2)
-})
-
-; Name ThdTest2 and stack size 100
-(loopwhile-thd ("ThdTest2" 100) t {
-        (print "Hello World4")
-        (sleep 2)
-})
 ```
 
 ---
@@ -4871,24 +4499,6 @@ Replace every occurrence of rep in str with optWith. If optWith is omitted every
 
 ---
 
-### str-replicate
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.00+ |
-
-```clj
-(str-replicate n char)
-```
-
-Build a string by replicating char n times.
-
-Example:
-```clj
-(str-replicate 8 \#x)
-> "xxxxxxxx"
-```
----
-
 #### str-to-upper
 
 | Platforms | Firmware |
@@ -5167,25 +4777,23 @@ The following example shows how to spawn a thread that handles SID (standard-id)
 Possible events to register are
 
 ```clj
-; ESC and Express
 (event-enable 'event-can-sid)  ; -> (event-can-sid . (id . data)), where id is U32 and data is a byte array
 (event-enable 'event-can-eid)  ; -> (event-can-eid . (id . data)), where id is U32 and data is a byte array
 (event-enable 'event-data-rx)  ; -> (event-data-rx . data), where data is a byte array
-
-; ESC Only
 (event-enable 'event-shutdown) ; -> event-shutdown
 (event-enable 'event-icu-width) ; -> (event-icu-width . (width . period))
 (event-enable 'event-icu-period) ; -> (event-icu-period . (width . period))
 
-; Express only
+; BMS events (currently express only)
 (event-enable 'event-bms-chg-allow) ; -> (event-bms-chg-allow allow)
 (event-enable 'event-bms-bal-ovr) ; -> (event-bms-bal-ovr ch bal)
 (event-enable 'event-bms-reset-cnt) ; -> event-bms-reset-cnt
 (event-enable 'event-bms-force-bal) ; -> (event-bms-force-bal force)
 (event-enable 'event-bms-zero-ofs) ; -> event-bms-zero-ofs
+
+; Other express only events
 (event-enable 'event-ble-rx) ; -> (event-ble-rx handle data)
 (event-enable 'event-wifi-disconnect) ; -> ('event-wifi-disconnect reason from-extension)
-(event-enable 'event-esp-now-rx) ; -> (event-esp-now-rx src des data rssi)
 ```
 
 The CAN-frames arrive whenever data is received on the CAN-bus and data-rx is received for example when data is sent from a Qml-script in VESC Tool.
@@ -5202,7 +4810,7 @@ This event is sent when extended id CAN-frames are received.
 This event is sent when custom app data is sent from VESC Tool or other connected devices. This works using all communication ports including USB, UART and CAN-bus.
 
 **event-shutdown**  
-This event is sent when the ESC is about to shut down. Note that this event currently only works on hardware with a power switch. If that is not the case you could try to, for example, monitor the input voltage and simulate this event when it drops below a set level.
+This event is sent when the VESC is about to shut down. Note that this event currently only works on hardware with a power switch. If that is not the case you could try to, for example, monitor the input voltage and simulate this event when it drops below a set level.
 
 **event-icu-width**  
 This event is sent when the input capture unit captures a pulse. Both the pulse width and the period of the last pulse are provided.
@@ -5211,33 +4819,16 @@ This event is sent when the input capture unit captures a pulse. Both the pulse 
 This event is sent when the input capture unit ends a period and the next pulse starts. Both the pulse width and the period are provided.
 
 **event-ble-rx** (Express exclusive)  
-This event is sent when a client connected to the Express writes a value to a
+This event is sent when a client connected to the VESC writes a value to a
 characteristic or descriptor. Read the
 [BLE docs](https://github.com/vedderb/vesc_express/tree/main/main/ble#events)
 for details.
 
 **event-wifi-disconnect** (Express exclusive)  
-This event is sent when the Express disconnects from the currently connected
+This event is sent when the VESC disconnects from the currently connected
 network for any reason. Read the
 [Wi-Fi docs](https://github.com/vedderb/vesc_express/tree/main/main/wifi#events)
 for details.
-
-**event-esp-now-rx**  
-This event is sent when ESP-NOW data is received.
-
----
-
-#### event-enable
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.00+ |
-
-```clj
-(event-enable event optEn)
-```
-
-Enable or disable event. The optional argument optEn can be set to 1 to enable the event or to 0 to disable it. If optEn is left out the event will be enabled.
 
 ---
 
@@ -5386,7 +4977,7 @@ Byte arrays will be de-allocated by the garbage collector on a regular basis, bu
 
 This will clear the allocated memory for `arr`.
 
-**Note:**  
+**Note**  
 Strings in lispBM are treated the same as byte arrays, so all of the above can be done to the characters in strings too.
 
 ---
@@ -5428,7 +5019,7 @@ marked as smaller in an efficient manner which avoids any new allocations.
 
 It is possible to shrink an array to a length of zero.
 
-**Note:**  
+**Note**  
 The array will be resized in place. The returned reference to `arr` is just for
 convenience. (Unless `opt-copy-symbol` is `'copy` of course.)
 
@@ -5685,121 +5276,6 @@ Lowering this value is useful if there are one or more timing-critical threads (
 ```
 
 Change the stack size for the garbage collector. If the GC stack is too small the program can crash during garbage collection and print a message stating that it ran out of GC stack. If that happens increasing the size from the default of 160 can help. Note that the GC stack is on LBM memory and increasing its size leaves less memory available for other things.
-
----
-
-#### image-save
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.06+ |
-
-```clj
-(image-save)
-```
-
-Save everything in the global environment in an image. Returns true on success and nil on failure. This function can fail if defrag memory pools are present in the global environment as these cannot be flattened. Instead, they should be created in the main-function of the program. This function will also fail if a main-function is missing.
-
-After calling image-save, the next time lbm is started (such as at the next boot) the environment at the point where image-save was called will be re-created and the main-function will be called. This bypasses the reader on the next boot, which speeds up the boot-time greatly (on large programs from several seconds to a few milliseconds). It also makes it much easier to use const-blocks as one does not have to take care for the reader to always create everything in the same order.
-
-One has to take care to move everything that alters the external state of the hardware, such as initializing drivers and io-pins, into the main-function as this state won't be restored when loading the image. This might sound strange in this context, but keep in mind that it is what you always do when writing regular C-programs on embedded hardware - when you enter main you initialize everything and start your threads and main loop.
-
-When building something battery-powered like a BMS that wakes up from sleep regularly to check things image-save is very useful as it is critical to boot fast to conserve power. A fast boot also improves the user experience in general.
-
-Example:
-
-```clj
-(defun test (a) {
-        (print (list "Arg:" a))
-})
-
-(defun main () {
-        (loopwhile t {
-                (test 123)
-                (sleep 1)
-        })
-})
-
-(image-save)
-
-; This is only needed in order to start the program before rebooting. Without
-; calling main here one has to reboot or restart lbm after stream or upload in
-; order to call main.
-(main)
-```
-
----
-
-## Mutexes
-
-Mutexes can be used to lock resources from other contexts. Example:
-
-
-```clj
-(def mtx (mutex-create))
-
-(defun print-numbers() {
-        (mutex-lock mtx)
-        (print 1)
-        (sleep 0.5)
-        (print 2)
-        (sleep 0.5)
-        (print 3)
-        (sleep 0.5)
-        (print 4)
-        (mutex-unlock mtx)
-})
-
-(spawn 100 print-numbers)
-(sleep 0.1)
-(spawn 100 print-numbers)
-(sleep 0.1)
-(spawn 100 print-numbers)
-(sleep 0.1)
-(spawn 100 print-numbers)
-```
-
----
-
-#### mutex-create
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.06+ |
-
-```clj
-(mutex-create)
-```
-
-Creates a mutex object. The mutex object is a dotted pair (ls . last) which contains two references into a single list, implementing a O(1)-insert-last O(1)-remove-first queue. At the surface though, it is a regular lisp dotted pair that can be destroyed with standard lisp functionality, no protection!
-
----
-
-#### mutex-lock
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.06+ |
-
-```clj
-(mutex-lock mtx)
-```
-
-Lock mutex mtx. If mtx already is locked the current context will sleep until it is unlocked.
-
----
-
-#### mutex-unlock
-
-| Platforms | Firmware |
-|---|---|
-| ESC, Express | 6.06+ |
-
-```clj
-(mutex-unlock mtx)
-```
-
-Unlock mutex mtx. If one or more contexts are waiting on this mutex the next one in the waiting queue will be unblocked.
 
 ---
 
@@ -6698,20 +6174,6 @@ Rename file (same as moving a file). Returns true on success, nil otherwise.
 
 ---
 
-#### f-sync
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(f-sync file)
-```
-
-Write buffered changes to the memory card.
-
----
-
 #### f-fatinfo
 
 | Platforms | Firmware |
@@ -6776,39 +6238,6 @@ Write data to firmware-buffer at offset. Returns true on success or nil/timeout 
 ```
 
 Reboot and attempt to load the new firmware from the firmware-buffer using the bootloader. This function always returns true as there is no easy way to get the response from the bootloader. If the optional argument optCanId is omitted or set to -1 the command is performed locally, otherwise it is performed on the CAN-device with id optCanId.
-
----
-
-#### fw-info
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(fw-info optCanId)
-```
-
-Get an assoc-list containing information about the VESC version number and git commit hashes. If optCanId is `-1` or not given the local device is queried. If the target device does not run a recent enough firmware that supports this, or if the CAN bus is otherwise non-functional, this function will timeout after 2 seconds returning the symbol `timeout`.
-
-The returned assoc-list has the following structure:
-
-```
-(
-    ('version . (majorNumber minorNumber))
-    ('test-version . number)
-    ('commit . str)
-    ('user-commit . str-or-nil)
-)
-```
-
-The test versions exact semantics depend on which firmware is running on the queried device, but on bldc for instance it is the beta version number. The user commit hash can be configured when you are compiling any of the VESC firmwares yourself, and is useful when you have a separate project that is using any of the VESC firmwares as a dependency, you can then configure it to be the commit of said project. If it was not configured when building it is instead set to `nil`. Unfortunately there is currently no documentation written anywhere for how to set it, [but here are the relevant lines of code in bldc's makefile](../Makefile#L167-L172), and [here they are in vesc_express's CMake configuration](https://github.com/vedderb/vesc_express/blob/main/CMakeLists.txt#L32-L37). Similar [flags exist for vesc_bms_fw](https://github.com/vedderb/vesc_bms_fw/blob/main/Makefile#L32-L37) and [vesc_gpstm](https://github.com/vedderb/vesc_gpstm/blob/main/Makefile#L31-L36).
-
-Example where we queried a bldc unit with the CAN id 10 running a development build of v6.6 beta 3:
-```clj
-(fw-info 10)
-> ((version 6u 6u) (test-version . 3u) (commit . "4f2df650c4ed6d820657217e966d1dbd6c2c01e6") (user-commit . nil))
-```
 
 ---
 
@@ -6929,7 +6358,7 @@ Write data to qml-buffer at offset. Returns true on success or nil/timeout on fa
 (lbm-run running optCanId)
 ```
 
-Run or stop the lbm-code (run if running is 1, stop otherwise). Returns true on success or nil/timeout on failure. If the optional argument optCanId is omitted or set to -1 the command is performed locally, otherwise it is performed on the CAN-device with id optCanId. If running is set to 1 and LispBM already is running a restart is performed.
+Run or stop the lbm-code (run if running is 1, stop otherwise). Returns true on success or nil/timeout on failure. If the optional argument optCanId is omitted or set to -1 the command is performed locally, otherwise it is performed on the CAN-device with id optCanId.
 
 ---
 
@@ -6985,7 +6414,6 @@ Creates an LED-buffer for num-leds leds. The optional argument optLedType specif
 | 1 | RGB |
 | 2 | GRBW |
 | 3 | RGBW |
-| 4 | WRGB |
 
 The optional argument optGammaCorr can be set to enable gamma correction for this LED-buffer. Gamma correction makes the brightness non-linear matching the response of human eyes. Generally that makes colors look better and it is something that all monitors do. The downside is that fewer distinct colors are available as not all bits can be used.
 
@@ -7353,46 +6781,6 @@ Example:
 
 ---
 
-## Crypto
-
----
-
-#### aes-ctr-crypt
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(aes-ctr-crypt key counter data start-offset length)
-```
-
-Performs in-place AES-CTR (128/192/256) encryption/decryption. Counter will also be updated.
-
-Example:
-
-```clj
-(def data [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15]) 
-(def key [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15]) 
-(def counter [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15])
-(def start-offset 5)
-(def len 6)
-; Encrypt data
-(aes-ctr-crypt key counter data start-offset len)
-(print data)
-> [0 1 2 3 4 15 146 12 189 72 100 11 12 13 14 15]
-(print counter)
-> [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 16]
-; Reset counter
-(setq counter [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15])
-; Decrypt data
-(aes-ctr-crypt key counter data start-offset len)
-(print data)
-> [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15]
-```
-
----
-
 ## Sleep Modes
 
 ---
@@ -7470,21 +6858,7 @@ Returns a 4k byte array from RTC memory that can be used as a general purpose ar
 Check if any client (e.g. VESC Tool) is connected over wifi. Returns true when connected, nil otherwise.
 
 ---
-
-#### connected-hub
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(connected-hub)
-```
-
-Check if we are connected to the TCP hub. Returns true when connected, nil otherwise. Notice that this does not tell if someone is connected to us using the hub, it only tells that we are connected to the hub and that others can connect to us.
-
----
-
+´
 #### connected-ble
 
 | Platforms | Firmware |
@@ -7510,185 +6884,6 @@ Check if any client (e.g. VESC Tool) is connected over ble. Returns true when co
 ```
 
 Check if any client (e.g. VESC Tool) is connected over usb. Returns true when connected, nil otherwise.
-
----
-
-## Non-Volatile Storage (NVS) 
-
-The `nvs` and `qml` partition on the ESP32 can be used to store non-volatile data as key-values using [Espressifs NVS library](
-https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/nvs_flash.html).
-
-A key is a string of maximum of 15 characters. 
-
-Functions operating on QML partition are named `nvs-qml-*`
-
-Note that QML-data cannot be stored as usual when using the QML-partition as NVS.
-
-Functions using nvs partition are named `nvs-*`. 
-
-On the nvs partition, storage is shared wth `eeprom-*`.
-
----
-
-
-#### nvs-erase
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-erase)
-```
-Erase all nvs keys on nvs partition. 
-
-```clj
-(nvs-erase "key")
-```
-Erase a specific key on nvs partition.
-
----
-
-#### nvs-qml-erase
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-qml-erase)
-```
-
-Erase all nvs keys on qml partition.
-
-```clj
-(nvs-qml-erase "key")
-```
-
-Erase a specific key on qml partition.
-
----
-
-#### nvs-qml-init
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-qml-init)
-```
-
-Initialize the QML-partition with the NVS-module. This has to be done before further NVS-operations can be used. If needed, the QML-partition will be erased; this can happen if other data is stored on the QML-partition that is incompatible with the NVS-module.
-
----
-
-#### nvs-read
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-read key)
-```
-
-Read key from nvs-partition, return the content as a byte array.
-
-Returns `nil` if a key has not been written to previously.
-
----
-
-
-#### nvs-qml-read
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-qml-read key)
-```
-
-Read key from QML-partition, return the content as a byte array.
-
-Returns `nil` if a key has not been written to previously.
-
----
-
-#### nvs-write
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-write key data)
-```
-
-Write data to key on nvs-partition. 
-
-If key already exists the old data will be replaced. 
-
-This can fail if there is not enough space. The space on the nvs partition is shared with eeprom-* commands. 
-
----
-
-#### nvs-qml-write
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-qml-write key data)
-```
-
-Write data to key on QML-partition. If key already exists the old data will be replaced. This can fail if (nvs-qml-init) has not been run or if there is not enough space.
-
----
-
-#### nvs-qml-erase-partition
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-qml-erase-partition)
-```
-
-Erase all nvs data from qml partition and deinitialize. This allows the QML partition to be used for QML if it was previously used for nvs storage.
-
----
-
-#### nvs-list
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-list)
-```
-
-Return a list with all existing NVS keys on the nvs partition.
-
----
-
-#### nvs-qml-list
-
-| Platforms | Firmware |
-|---|---|
-| Express | 6.06+ |
-
-```clj
-(nvs-qml-list)
-```
-
-Return a list with all existing NVS keys on the `qml` partition.
-
-If (nvs-qml-init) has not been run this always returns `nil`.
 
 ---
 

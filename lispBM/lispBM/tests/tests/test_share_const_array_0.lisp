@@ -1,2 +1,4 @@
 
-(check (= (eval-program (read-program (flash-prg))) 11))
+(def a (const-prg))
+
+(check (= (eval-program (read-program (const-prg))) 11))

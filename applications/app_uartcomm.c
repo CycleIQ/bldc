@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 #include "app.h"
@@ -44,7 +45,7 @@
 
 // Threads
 static THD_FUNCTION(packet_process_thread, arg);
-__attribute__((section(".ram4"))) static THD_WORKING_AREA(packet_process_thread_wa, 2048);
+static THD_WORKING_AREA(packet_process_thread_wa, 2048);
 
 // Variables
 static volatile bool thread_is_running = false;
@@ -248,3 +249,5 @@ static THD_FUNCTION(packet_process_thread, arg) {
 		}
 	}
 }
+
+#pragma GCC pop_options

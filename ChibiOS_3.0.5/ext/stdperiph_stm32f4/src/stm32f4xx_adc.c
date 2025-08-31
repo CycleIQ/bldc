@@ -102,6 +102,7 @@
   ******************************************************************************
   */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 /* Includes ------------------------------------------------------------------*/
@@ -1729,6 +1730,8 @@ void ADC_ClearITPendingBit(ADC_TypeDef* ADCx, uint16_t ADC_IT)
   /* Clear the selected ADC interrupt pending bits */
   ADCx->SR = ~(uint32_t)itmask;
 }
+
+#pragma GCC pop_options
 
 /**
   * @}

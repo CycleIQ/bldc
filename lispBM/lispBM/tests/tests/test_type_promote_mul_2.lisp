@@ -1,6 +1,8 @@
 
 ;; Promotion of i type
 
+(defun apply (f x) (eval (cons f x)))
+
 (if (is-64bit) {
   (define a1 (eq (type-of (* 1 1b)) type-i))
   (define a2 (eq (type-of (* 1 1)) type-i))

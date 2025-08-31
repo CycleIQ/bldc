@@ -55,6 +55,7 @@
   ******************************************************************************
   */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 /* Includes ------------------------------------------------------------------*/
@@ -2840,6 +2841,8 @@ void RCC_ClearITPendingBit(uint8_t RCC_IT)
      pending bits */
   *(__IO uint8_t *) CIR_BYTE3_ADDRESS = RCC_IT;
 }
+
+#pragma GCC pop_options
 
 /**
   * @}

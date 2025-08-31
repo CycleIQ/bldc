@@ -24,7 +24,7 @@
 extern "C" {
 #endif
 
-void lbm_random_extensions_init(void);
+bool lbm_random_extensions_init(void);
 
 #ifdef __cplusplus
 }

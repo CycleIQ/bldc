@@ -3,4 +3,5 @@
 
 (free arr)
 
-(check (eq '(exit-error type_error) (trap (bufset-i8 arr 0 1))))
+(check (and (eq (car arr) nil)
+            (eq (cdr arr) nil)))

@@ -23,6 +23,7 @@
  * @{
  */
 
+#pragma GCC push_options
 #pragma GCC optimize ("Os")
 
 /* Includes ------------------------------------------------------------------*/
@@ -635,6 +636,8 @@ static uint16_t EE_EraseSectorIfNotEmpty(uint32_t FLASH_Sector, uint8_t VoltageR
 
 	return FLASH_COMPLETE;
 }
+
+#pragma GCC pop_options
 
 /**
  * @}

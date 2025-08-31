@@ -6,7 +6,6 @@
 
 
 (def id (spawn-trap proc1 (self)))
-(sleep 0.1) ; make sure that spawned proc has reached block.
 (unblock-error id)
 
 (check (recv ((exit-error (? tid) (? e)) 't)

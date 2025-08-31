@@ -22,6 +22,5 @@
 
 bool main_init_done(void);
 uint32_t main_calc_hw_crc(void);
-void main_stop_motor_and_reset(void);
 
 #endif /* MAIN_H_ */
