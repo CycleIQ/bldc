@@ -8,6 +8,8 @@
 
 #include "datatypes.h"
 
+
+
 typedef struct CYCLEIQ_CONFIG
 {
   float max_speed;
@@ -37,6 +39,7 @@ typedef struct CYCLEIQ_DATA
 
   // Ride configuration
   uint8_t current_gear;
+  uint8_t max_gear;
   cycleiq_support_mode_t support_mode;
   cycleiq_ride_mode_t ride_mode;
 
@@ -46,9 +49,11 @@ typedef struct CYCLEIQ_DATA
   float range;         // Range in km
 } cycleiq_data_t;
 
+void cycleiq_data_init(void);
 void cycleiq_data_reset(void);
 void cycleiq_config_load(void);
 void cycleiq_config_save(void);
+void cycleiq_change_ride_mode(void);
 
 void cycleiq_data_loop(void);
 void cycleiq_data_motor_update(float rpm, int8_t temperature);

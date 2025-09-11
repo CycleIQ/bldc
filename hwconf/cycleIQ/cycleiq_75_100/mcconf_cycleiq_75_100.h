@@ -25,7 +25,7 @@
 
 // Motor Current Max
 #ifndef MCCONF_L_CURRENT_MAX
-#define MCCONF_L_CURRENT_MAX 50
+#define MCCONF_L_CURRENT_MAX 80
 #endif
 
 // Motor Current Max Brake
@@ -35,12 +35,12 @@
 
 // Battery Current Max
 #ifndef MCCONF_L_IN_CURRENT_MAX
-#define MCCONF_L_IN_CURRENT_MAX 40
+#define MCCONF_L_IN_CURRENT_MAX 50
 #endif
 
 // Battery Current Max Regen
 #ifndef MCCONF_L_IN_CURRENT_MIN
-#define MCCONF_L_IN_CURRENT_MIN -20
+#define MCCONF_L_IN_CURRENT_MIN -5
 #endif
 
 // Input Current Limit Map Start
@@ -55,7 +55,7 @@
 
 // Absolute Maximum Current
 #ifndef MCCONF_L_MAX_ABS_CURRENT
-#define MCCONF_L_MAX_ABS_CURRENT 100
+#define MCCONF_L_MAX_ABS_CURRENT 150
 #endif
 
 // Max ERPM Reverse
@@ -90,7 +90,7 @@
 
 // Maximum Input Voltage
 #ifndef MCCONF_L_MAX_VOLTAGE
-#define MCCONF_L_MAX_VOLTAGE 57
+#define MCCONF_L_MAX_VOLTAGE 90
 #endif
 
 // Battery Voltage Cutoff Start
@@ -260,17 +260,17 @@
 
 // Current KP
 #ifndef MCCONF_FOC_CURRENT_KP
-#define MCCONF_FOC_CURRENT_KP 0.0517
+#define MCCONF_FOC_CURRENT_KP 0.0824057
 #endif
 
 // Current KI
 #ifndef MCCONF_FOC_CURRENT_KI
-#define MCCONF_FOC_CURRENT_KI 43.59
+#define MCCONF_FOC_CURRENT_KI 38.07
 #endif
 
 // Zero Vector Frequency
 #ifndef MCCONF_FOC_F_ZV
-#define MCCONF_FOC_F_ZV 24000
+#define MCCONF_FOC_F_ZV 30000
 #endif
 
 // Dead Time Compensation
@@ -310,27 +310,27 @@
 
 // Motor Inductance (L)
 #ifndef MCCONF_FOC_MOTOR_L
-#define MCCONF_FOC_MOTOR_L 5.167e-05
+#define MCCONF_FOC_MOTOR_L 8.24057e-05
 #endif
 
 // Motor Inductance Difference (Lq - Ld)
 #ifndef MCCONF_FOC_MOTOR_LD_LQ_DIFF
-#define MCCONF_FOC_MOTOR_LD_LQ_DIFF 1.445e-05
+#define MCCONF_FOC_MOTOR_LD_LQ_DIFF 2.16127e-05
 #endif
 
 // Motor Resistance (R)
 #ifndef MCCONF_FOC_MOTOR_R
-#define MCCONF_FOC_MOTOR_R 0.0436
+#define MCCONF_FOC_MOTOR_R 0.03807
 #endif
 
 // Motor Flux Linkage (λ)
 #ifndef MCCONF_FOC_MOTOR_FLUX_LINKAGE
-#define MCCONF_FOC_MOTOR_FLUX_LINKAGE 0.006247
+#define MCCONF_FOC_MOTOR_FLUX_LINKAGE 0.011736
 #endif
 
 // Observer Gain (x1M)
 #ifndef MCCONF_FOC_OBSERVER_GAIN
-#define MCCONF_FOC_OBSERVER_GAIN 2.562e+07
+#define MCCONF_FOC_OBSERVER_GAIN 7.26037e+06
 #endif
 
 // Observer Gain At Minimum Duty
@@ -365,7 +365,7 @@
 
 // Openloop ERPM
 #ifndef MCCONF_FOC_OPENLOOP_RPM
-#define MCCONF_FOC_OPENLOOP_RPM 700
+#define MCCONF_FOC_OPENLOOP_RPM 300
 #endif
 
 // Openloop ERPM at Min Current
@@ -420,32 +420,32 @@
 
 // Hall Table [1]
 #ifndef MCCONF_FOC_HALL_TAB_1
-#define MCCONF_FOC_HALL_TAB_1 132
+#define MCCONF_FOC_HALL_TAB_1 164
 #endif
 
 // Hall Table [2]
 #ifndef MCCONF_FOC_HALL_TAB_2
-#define MCCONF_FOC_HALL_TAB_2 199
+#define MCCONF_FOC_HALL_TAB_2 98
 #endif
 
 // Hall Table [3]
 #ifndef MCCONF_FOC_HALL_TAB_3
-#define MCCONF_FOC_HALL_TAB_3 168
+#define MCCONF_FOC_HALL_TAB_3 128
 #endif
 
 // Hall Table [4]
 #ifndef MCCONF_FOC_HALL_TAB_4
-#define MCCONF_FOC_HALL_TAB_4 65
+#define MCCONF_FOC_HALL_TAB_4 28
 #endif
 
 // Hall Table [5]
 #ifndef MCCONF_FOC_HALL_TAB_5
-#define MCCONF_FOC_HALL_TAB_5 96
+#define MCCONF_FOC_HALL_TAB_5 0
 #endif
 
 // Hall Table [6]
 #ifndef MCCONF_FOC_HALL_TAB_6
-#define MCCONF_FOC_HALL_TAB_6 32
+#define MCCONF_FOC_HALL_TAB_6 62
 #endif
 
 // Hall Table [7]
@@ -570,32 +570,32 @@
 
 // Current Offset 0
 #ifndef MCCONF_FOC_OFFSETS_CURRENT_0
-#define MCCONF_FOC_OFFSETS_CURRENT_0 2037.86
+#define MCCONF_FOC_OFFSETS_CURRENT_0 2045.95
 #endif
 
 // Current Offset 1
 #ifndef MCCONF_FOC_OFFSETS_CURRENT_1
-#define MCCONF_FOC_OFFSETS_CURRENT_1 2037.78
+#define MCCONF_FOC_OFFSETS_CURRENT_1 2039.85
 #endif
 
 // Current Offset 2
 #ifndef MCCONF_FOC_OFFSETS_CURRENT_2
-#define MCCONF_FOC_OFFSETS_CURRENT_2 2039.51
+#define MCCONF_FOC_OFFSETS_CURRENT_2 2045.22
 #endif
 
 // Voltage Offset 0
 #ifndef MCCONF_FOC_OFFSETS_VOLTAGE_0
-#define MCCONF_FOC_OFFSETS_VOLTAGE_0 -0.0059
+#define MCCONF_FOC_OFFSETS_VOLTAGE_0 -0.0086
 #endif
 
 // Voltage Offset 1
 #ifndef MCCONF_FOC_OFFSETS_VOLTAGE_1
-#define MCCONF_FOC_OFFSETS_VOLTAGE_1 0.0022
+#define MCCONF_FOC_OFFSETS_VOLTAGE_1 -0.0717
 #endif
 
 // Voltage Offset 2
 #ifndef MCCONF_FOC_OFFSETS_VOLTAGE_2
-#define MCCONF_FOC_OFFSETS_VOLTAGE_2 0.0036
+#define MCCONF_FOC_OFFSETS_VOLTAGE_2 0.0803
 #endif
 
 // Voltage Offset Undriven 0
@@ -895,7 +895,7 @@
 
 // Motor Poles
 #ifndef MCCONF_SI_MOTOR_POLES
-#define MCCONF_SI_MOTOR_POLES 72
+#define MCCONF_SI_MOTOR_POLES 96
 #endif
 
 // Gear Ratio
@@ -920,7 +920,7 @@
 
 // Battery Capacity
 #ifndef MCCONF_SI_BATTERY_AH
-#define MCCONF_SI_BATTERY_AH 17.8
+#define MCCONF_SI_BATTERY_AH 29
 #endif
 
 // Motor No Load Current

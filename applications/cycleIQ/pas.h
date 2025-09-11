@@ -13,9 +13,10 @@
 
 typedef struct
 {
-  float pedal_rpm_start;         // RPM at which PAS starts
-  uint8_t min_correct_direction; // Minimum correct direction events to consider pedaling
-  uint8_t magnets;               // Number of magnets on the PAS sensor
+  float pedal_rpm_start; // RPM at which PAS starts
+  float pedal_rpm_max;   // RPM at which PAS stops
+
+  uint8_t magnets; // Number of magnets on the PAS sensor
 } cycleiq_pas_config;
 
 void cycleiq_pas_init(void);
@@ -26,7 +27,6 @@ void cycleiq_pas_isr_handler(void);
 
 bool cycleiq_pas_is_pedaling(void);
 float cycleiq_pas_get_pedal_rpm(void);
-uint32_t cycleiq_pas_get_interrupt_counter(void);
 
 float cycleiq_ts_get_voltage(void);
 float cycleiq_ts_get_percentage(void);

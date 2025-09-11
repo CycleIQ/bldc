@@ -12,12 +12,6 @@
 
 static volatile ring_buffer_t send_buffer;
 
-#ifdef CYCLEIQ_HIGH_POWER
-static const int max_gear = 6; // Maximum gear for high power mode
-#else
-static const int max_gear = 5; // Maximum gear for normal mode
-#endif
-
 static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len)
 {
   if ((id & 0xFF) != CYCLEIQ_CAN_ID)
@@ -49,6 +43,15 @@ static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len)
     if (data[0] > CYCLEIQ_MODE_HYBRID)
       break; // Invalid mode
     cycleiq_data.support_mode = data[0];
+    break;
+  case CYCLEIQ_COMM_RIDE_MODE_SET:
+    if (len < 1)
+      break;
+    if (data[0] > CYCLEIQ_RIDE_MODE_MOUNTAIN)
+      break; // Invalid mode
+
+    cycleiq_data.ride_mode = data[0];
+    cycleiq_change_ride_mode();
     break;
   default:
     break;

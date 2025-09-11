@@ -13,24 +13,29 @@
 #include <math.h>
 #include <commands.h>
 
+#define TORQUE_SENSOR_SAMPLES 10
+
 // Configuration structure for PAS
 static volatile cycleiq_pas_config config;
-static volatile float max_pulse_period_ms = 0.0; // Maximum pulse period in milliseconds after which PAS stops
+
+static volatile float max_pulse_period_ms = 0.0;   // Maximum pulse period in milliseconds after which PAS stops
+static volatile float min_pulse_period_ms = 0.0;   // Minimum pulse period in milliseconds to filter out noise
+static volatile uint8_t min_correct_direction = 0; // Minimum correct direction events to consider pedaling
 
 // Variables to track PAS state
-static volatile systime_t last_pulse_time = 0;
-static volatile float pedal_rpm = 0.0;
-static volatile bool is_pedaling = false;
-static volatile uint8_t correct_direction_counter = 0; // Counter for correct direction events
-static volatile float last_pedal_rpm = 0.0;            // Last pedal RPM for filtering
-static volatile uint32_t interrupt_counter = 0;        // Counter for interrupts to handle debouncing
-
 static volatile int last_state = 0;
 static volatile systime_t last_state_change = 0;
+static volatile systime_t last_pulse_time = 0;
+static volatile uint8_t correct_direction_counter = 0; // Counter for correct direction events
+
+// Human readable PAS state
+static volatile bool is_pedaling = false;
+static volatile float pedal_rpm = 0.0;
+static volatile float last_pedal_rpm = 0.0; // Last pedal RPM for filtering
 
 // Constants for torque sensor voltage thresholds
-const float TORQUE_VOLTAGE_MIN = 1.55f;             // Starting voltage for torque sensor
-const float TORQUE_VOLTAGE_MAX = 3.0f;              // Maximum voltage for torque sensor
+static float TORQUE_VOLTAGE_MIN = 1.5f;             // Starting voltage for torque sensor
+const float TORQUE_VOLTAGE_MAX = 2.4f;              // Maximum voltage for torque sensor
 static volatile float torque_sensor_voltage = 0.0f; // Current voltage from the torque sensor (used for filtering)
 
 #ifdef CYCLEIQ_HAS_2_WIRE_PAS
@@ -79,6 +84,19 @@ void cycleiq_pas_init(void)
   // Enable the NVIC for the EXTI line
   nvicEnableVector(EXTI15_10_IRQn, 1); // Enable EXTI line 10 interrupt
 #endif
+
+  // Zero out the torque sensor voltage across 10 samples
+  torque_sensor_voltage = 0.0f;
+  for (int i = 0; i < TORQUE_SENSOR_SAMPLES; i++)
+  {
+    torque_sensor_voltage += ADC_VOLTS(TS_INDEX);
+    chThdSleepMilliseconds(10);
+  }
+  torque_sensor_voltage /= TORQUE_SENSOR_SAMPLES; // Average the readings
+  torque_sensor_voltage *= 1.03f;                 // Apply slight offset to account for ADC inaccuracies (3%)
+
+  TORQUE_VOLTAGE_MIN = torque_sensor_voltage;
+  torque_sensor_voltage = 0.0f; // Reset the filtered voltage
 }
 
 void cycleiq_pas_deinit(void)
@@ -98,11 +116,13 @@ void cycleiq_pas_configure(cycleiq_pas_config *conf)
   config = *conf;
 
 #ifdef CYCLEIQ_HAS_2_WIRE_PAS
-  config.min_correct_direction = config.magnets * 4 / 2;
+  min_correct_direction = config.magnets * 4 / 2;
   max_pulse_period_ms = 1000.0 / ((config.pedal_rpm_start / 60.0) * config.magnets); // Calculate the maximum pulse period based on pedal RPM and magnets
+  min_pulse_period_ms = 1000.0 / ((config.pedal_rpm_max / 60.0) * config.magnets);   // Calculate the minimum pulse period based on pedal RPM and magnets
 #else
-  config.min_correct_direction = config.magnets / 2;                                 // For single-wire PAS, set the minimum correct direction events to half the magnets
+  min_correct_direction = config.magnets / 2;                                        // For single-wire PAS, set the minimum correct direction events to half the magnets
   max_pulse_period_ms = 1000.0 / ((config.pedal_rpm_start / 60.0) * config.magnets); // Calculate the maximum pulse period based on pedal RPM and magnets
+  min_pulse_period_ms = 1000.0 / ((config.pedal_rpm_max / 60.0) * config.magnets);   // Calculate the minimum pulse period based on pedal RPM and magnets
 #endif
 }
 
@@ -131,18 +151,26 @@ void cycleiq_pas_isr_handler(void)
   if (state == prev_state)
     return;
 
+  systime_t current_time = chVTGetSystemTimeX();
+  if (current_time - last_pulse_time < MS2ST(min_pulse_period_ms)) // Probably noise, ignore
+    return;
+
+  last_pulse_time = current_time;
+
 #ifdef CYCLEIQ_HAS_2_WIRE_PAS
   int diff = (pas_lookup[state] - pas_lookup[prev_state] + 4) % 4; // Calculate the difference in state (0-3)
-  if (diff != 1)
-  {
+  if (diff == 3)
+  {                                // Backwards
     correct_direction_counter = 0; // Reset counter if the direction is not correct
     return;
   }
+  else if (diff == 2) // Invalid state (may happen due to noise)
+    return;           // Ignore the state change, but don't reset the counter
 
-  if (correct_direction_counter < config.min_correct_direction)
+  if (correct_direction_counter < min_correct_direction)
     correct_direction_counter++;
 #else
-  if (correct_direction_counter < config.min_correct_direction)
+  if (correct_direction_counter < min_correct_direction)
     correct_direction_counter++;
 #endif
 
@@ -167,7 +195,7 @@ void cycleiq_pas_loop(void)
     return;
   }
 
-  if (correct_direction_counter < config.min_correct_direction)
+  if (correct_direction_counter < min_correct_direction)
   {
     is_pedaling = false;
     pedal_rpm = 0.0f;
@@ -198,14 +226,6 @@ float cycleiq_pas_get_pedal_rpm(void)
   chSysUnlock();
   return res;
 }
-uint32_t cycleiq_pas_get_interrupt_counter(void)
-{
-  uint32_t res;
-  chSysLock();
-  res = interrupt_counter;
-  chSysUnlock();
-  return res;
-}
 float cycleiq_ts_get_voltage(void)
 {
   float res;
@@ -227,7 +247,7 @@ float cycleiq_ts_get_percentage(void)
   float res;
   chSysLock();
   res = utils_map(torque_sensor_voltage, TORQUE_VOLTAGE_MIN, TORQUE_VOLTAGE_MAX, 0.0f, 1.0f);
-  utils_truncate_number(&res, 0.0f, 1.0f);
+  utils_truncate_number(&res, 0.0f, 1.5f); // Max 200%
   chSysUnlock();
   return res;
 }

@@ -35,24 +35,33 @@ static volatile int8_t motor_temperature; // Motor temperature in Celsius
 static volatile bool cycleiq_motor_on = true; // True if the motor is on
 
 static const float gear_currents[] = {
+    0.0f,
+    2.0f,   // 100W
+    3.125f, // 150W
+    5.0f,   // 250W
+};
+
+static const float gear_currents_mountain[] = {
     0.0f,  // 0 gear
     2.5f,  // 1 gear
     5.0f,  // 2 gear
     9.0f,  // 3 gear
     15.0f, // 4 gear
     30.0f, // 5 gear
-    50.0f, // 6 gear (experimental)
+    40.0f, // 6 gear (experimental)
 };
 
 void app_custom_start(void)
 {
   stop_now = false;
 
+  cycleiq_data_init();
   cycleiq_comm_init();
 
   cycleiq_pas_init();
   cycleiq_pas_configure(&(cycleiq_pas_config){
-      .pedal_rpm_start = 10.0, // RPM at which PAS starts
+      .pedal_rpm_start = 15.0, // RPM at which PAS starts
+      .pedal_rpm_max = 180.0,  // Max RPM for filtering
       .magnets = 18,           // Number of magnets on the PAS sensor
   });
 
@@ -97,8 +106,6 @@ static THD_FUNCTION(cycleiq_thread, arg)
     }
     chThdSleepMilliseconds(10); // 100Hz loop
 
-    commands_printf("TS: %.2fV", cycleiq_ts_get_voltage());
-
     cycleiq_pas_loop();
     cycleiq_comm_loop();
     cycleiq_data_loop();
@@ -115,12 +122,30 @@ static THD_FUNCTION(cycleiq_thread, arg)
     {
     case CYCLEIQ_MODE_PAS:
       if (cycleiq_pas_is_pedaling())
-        target_current = gear_currents[cycleiq_data.current_gear];
+        switch (cycleiq_data.ride_mode)
+        {
+        case CYCLEIQ_RIDE_MODE_MOUNTAIN:
+          target_current = gear_currents_mountain[cycleiq_data.current_gear];
+          break;
+        default:
+          target_current = gear_currents[cycleiq_data.current_gear];
+          break;
+        }
       else
         target_current = 0.0f;
       break;
     case CYCLEIQ_MODE_TORQUE:
-      target_current = cycleiq_ts_get_percentage() * gear_currents[cycleiq_data.current_gear];
+      switch (cycleiq_data.ride_mode)
+      {
+      case CYCLEIQ_RIDE_MODE_MOUNTAIN:
+        target_current = gear_currents_mountain[cycleiq_data.current_gear];
+        break;
+
+      default:
+        target_current = gear_currents[cycleiq_data.current_gear];
+        break;
+      }
+      target_current *= cycleiq_ts_get_percentage();
       break;
     default:
       target_current = 0.0f;
@@ -197,7 +222,7 @@ static THD_FUNCTION(cycleiq_speed_sensor_thread, arg)
       {
         last_temperature_time = time;
 
-        int16_t temperature = (int16_t)NTC_TEMP_MOTOR(3435.0f); // Read motor temperature
+        int temperature = (int)NTC_TEMP_MOTOR(3435.0f); // Read motor temperature
         utils_truncate_number_int(&temperature, -128, 127);
         int8_t current_temperature = (int8_t)temperature;                       // Constrain to int8_t range
         UTILS_LP_MOVING_AVG_APPROX(motor_temperature, current_temperature, 10); // Apply a moving average filter
