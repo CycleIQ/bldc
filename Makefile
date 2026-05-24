@@ -99,11 +99,20 @@ help:
 	@echo "     fw_<board>_clean     - Remove firmware for <board>"
 	@echo "     fw_<board>_flash     - Use OpenOCD + SWD/JTAG to write firmware to <target>"
 	@echo ""
+	@echo "   [Editor]"
+	@echo "     lsp                  - Generate compile_commands.json for clangd"
+	@echo "                            override board with LSP_BOARD=<board>"
+	@echo ""
 	@echo "   Hint: Add V=1 to your command line to see verbose build output."
 	@echo ""
 	@echo "   Note: All tools will be installed into $(TOOLS_DIR)"
 	@echo "         All build output will be placed in $(BUILD_DIR)"
 	@echo ""
+
+.PHONY: lsp compile_commands
+LSP_BOARD ?= $(firstword $(ALL_BOARD_NAMES))
+lsp compile_commands:
+	$(V1) $(PYTHON) scripts/gen_compile_commands.py --board "$(LSP_BOARD)"
 
 
 $(DL_DIR):

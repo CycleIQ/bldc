@@ -1,0 +1,6 @@
+CompileFlags:
+  Remove:
+    - -specs=*
+    - -Wa,*
+    - -mthumb-interwork
+    - -mno-thumb-interwork

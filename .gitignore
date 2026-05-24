@@ -11,6 +11,7 @@ package/
 .settings/language.settings.xml
 .DS_Store
 workspace.code-workspace
+compile_commands.json
 
 # Qt project settings
 *.pro.user
