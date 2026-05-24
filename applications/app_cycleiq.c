@@ -2,20 +2,20 @@
 
 #include "app.h"
 #include "ch.h"
+#include "comm_can.h"
+#include "commands.h"
 #include "hal.h"
-#include "stm32f4xx_conf.h"
+#include "hw.h"
 #include "mc_interface.h"
+#include "stm32f4xx_conf.h"
 #include "timeout.h"
 #include "utils_math.h"
-#include "comm_can.h"
-#include "hw.h"
 #include <math.h>
-#include "commands.h"
 
-#include "cycleIQ/datatypes.h"
-#include "cycleIQ/pas.h"
 #include "cycleIQ/comm.h"
 #include "cycleIQ/data.h"
+#include "cycleIQ/datatypes.h"
+#include "cycleIQ/pas.h"
 #include "cycleIQ/pid.h"
 
 static THD_FUNCTION(cycleiq_thread, arg);
@@ -29,7 +29,8 @@ static const float PHASE_CURRENT_RAMP = 1.5f;
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
 
-static volatile float motor_rpm;          // Speed from the speed sensor in rpm (used for filtering)
+static volatile float
+    motor_rpm; // Speed from the speed sensor in rpm (used for filtering)
 static volatile int8_t motor_temperature; // Motor temperature in Celsius
 
 static volatile bool cycleiq_motor_on = true; // True if the motor is on
@@ -51,8 +52,7 @@ static const float gear_currents_mountain[] = {
     40.0f, // 6 gear (experimental)
 };
 
-void app_custom_start(void)
-{
+void app_custom_start(void) {
   stop_now = false;
 
   cycleiq_data_init();
@@ -61,18 +61,23 @@ void app_custom_start(void)
   cycleiq_pas_init();
   cycleiq_pas_configure(&(cycleiq_pas_config){
       .pedal_rpm_start = 15.0, // RPM at which PAS starts
-      .pedal_rpm_max = 180.0,  // Max RPM for filtering
-      .magnets = 18,           // Number of magnets on the PAS sensor
+      .pedal_rpm_max = 240.0,  // Max RPM for filtering
+#ifdef CYCLEIQ_HAS_2_WIRE_PAS
+      .magnets = 18, // Number of magnets on the PAS sensor
+#else
+      .magnets = 36, // Number of magnets on the PAS sensor
+#endif
   });
 
-  chThdCreateStatic(cycleiq_thread_wa, sizeof(cycleiq_thread_wa), NORMALPRIO, cycleiq_thread, NULL);
-  chThdCreateStatic(cycleiq_speed_sensor_thread_wa, sizeof(cycleiq_speed_sensor_thread_wa), NORMALPRIO, cycleiq_speed_sensor_thread, NULL);
+  chThdCreateStatic(cycleiq_thread_wa, sizeof(cycleiq_thread_wa), NORMALPRIO,
+                    cycleiq_thread, NULL);
+  chThdCreateStatic(cycleiq_speed_sensor_thread_wa,
+                    sizeof(cycleiq_speed_sensor_thread_wa), NORMALPRIO,
+                    cycleiq_speed_sensor_thread, NULL);
 };
-void app_custom_stop(void)
-{
+void app_custom_stop(void) {
   stop_now = true;
-  while (is_running)
-  {
+  while (is_running) {
     chThdSleepMilliseconds(1);
   }
 
@@ -83,8 +88,7 @@ void app_custom_stop(void)
 
 void app_custom_configure(app_configuration *conf) {};
 
-static THD_FUNCTION(cycleiq_thread, arg)
-{
+static THD_FUNCTION(cycleiq_thread, arg) {
   (void)arg;
   chRegSetThreadName("CYCLEIQ");
   is_running = true;
@@ -97,14 +101,12 @@ static THD_FUNCTION(cycleiq_thread, arg)
 
   float duty = 0.0f;
 
-  for (;;)
-  {
-    if (stop_now)
-    {
+  for (;;) {
+    if (stop_now) {
       is_running = false;
       return;
     }
-    chThdSleepMilliseconds(10); // 100Hz loop
+    chThdSleepMilliseconds(100); // 100Hz loop
 
     cycleiq_pas_loop();
     cycleiq_comm_loop();
@@ -112,18 +114,15 @@ static THD_FUNCTION(cycleiq_thread, arg)
 
     timeout_reset();
 
-    if (!cycleiq_motor_on)
-    {
+    if (!cycleiq_motor_on) {
       mc_interface_set_current(0.0f); // Ensure motor is off
-      continue;                       // Skip the rest of the loop if motor is off
+      continue; // Skip the rest of the loop if motor is off
     }
 
-    switch (cycleiq_data.support_mode)
-    {
+    switch (cycleiq_data.support_mode) {
     case CYCLEIQ_MODE_PAS:
       if (cycleiq_pas_is_pedaling())
-        switch (cycleiq_data.ride_mode)
-        {
+        switch (cycleiq_data.ride_mode) {
         case CYCLEIQ_RIDE_MODE_MOUNTAIN:
           target_current = gear_currents_mountain[cycleiq_data.current_gear];
           break;
@@ -135,8 +134,7 @@ static THD_FUNCTION(cycleiq_thread, arg)
         target_current = 0.0f;
       break;
     case CYCLEIQ_MODE_TORQUE:
-      switch (cycleiq_data.ride_mode)
-      {
+      switch (cycleiq_data.ride_mode) {
       case CYCLEIQ_RIDE_MODE_MOUNTAIN:
         target_current = gear_currents_mountain[cycleiq_data.current_gear];
         break;
@@ -152,27 +150,31 @@ static THD_FUNCTION(cycleiq_thread, arg)
       break;
     }
 
-    if (target_current <= 0.0f)
-    {
+    if (target_current <= 0.0f) {
       phase_current = 0.0f; // If not pedaling, set phase current to zero
       phase_current_filtered = 0.0f;
     }
 
     duty = mc_interface_get_duty_cycle_now(); // Get the current duty cycle
-    if (duty < 0.02f)
-    {
+    if (duty < 0.02f) {
       duty = 0.02f;
     }
 
-    phase_current = target_current / duty;                                                                                                   // Calculate phase current based on target current and duty cycle
-    utils_truncate_number(&phase_current, mc_interface_get_configuration()->l_current_min, mc_interface_get_configuration()->l_current_max); // Constrain phase current to max limits
+    phase_current =
+        target_current /
+        duty; // Calculate phase current based on target current and duty
+              // cycle
+    utils_truncate_number(
+        &phase_current, mc_interface_get_configuration()->l_current_min,
+        mc_interface_get_configuration()
+            ->l_current_max); // Constrain phase current to max limits
 
     float new_phase_current = phase_current_filtered;
-    UTILS_LP_MOVING_AVG_APPROX(new_phase_current, phase_current, 10); // Apply a low-pass filter to the current
+    UTILS_LP_MOVING_AVG_APPROX(new_phase_current, phase_current,
+                               10); // Apply a low-pass filter to the current
 
     float delta = new_phase_current - phase_current_filtered;
-    if (delta > PHASE_CURRENT_RAMP)
-    {
+    if (delta > PHASE_CURRENT_RAMP) {
       delta = PHASE_CURRENT_RAMP;
     }
 
@@ -181,8 +183,7 @@ static THD_FUNCTION(cycleiq_thread, arg)
   }
 }
 
-static THD_FUNCTION(cycleiq_speed_sensor_thread, arg)
-{
+static THD_FUNCTION(cycleiq_speed_sensor_thread, arg) {
   (void)arg;
   chRegSetThreadName("CYCLEIQ_SPEED_SENSOR");
 
@@ -192,8 +193,7 @@ static THD_FUNCTION(cycleiq_speed_sensor_thread, arg)
   bool last_state = false;
   uint8_t cnt = 0;
 
-  for (;;)
-  {
+  for (;;) {
     if (stop_now)
       return;
 
@@ -201,14 +201,12 @@ static THD_FUNCTION(cycleiq_speed_sensor_thread, arg)
     time += US2ST(200);
 
     bool state = (ADC_Value[ADC_IND_TEMP_MOTOR] < 50); // raw threshold
-    if (state && !last_state)
-    {
+    if (state && !last_state) {
       systime_t pulse_duration = chVTTimeElapsedSinceX(last_pulse_time);
       last_pulse_time = time;
 
       float pulse_duration_s = (float)ST2US(pulse_duration) * 1e-6f;
-      if (pulse_duration_s > 0.0f)
-      {
+      if (pulse_duration_s > 0.0f) {
         float current_rpm = 60.0f / pulse_duration_s;
         UTILS_LP_MOVING_AVG_APPROX(motor_rpm, current_rpm, 5);
       }
@@ -218,21 +216,24 @@ static THD_FUNCTION(cycleiq_speed_sensor_thread, arg)
 
     if (!state) // High voltage
     {
-      if (time - last_pulse_time > MS2ST(3) && time - last_temperature_time > MS2ST(3))
-      {
+      if (time - last_pulse_time > MS2ST(3) &&
+          time - last_temperature_time > MS2ST(3)) {
         last_temperature_time = time;
 
-        int temperature = (int)NTC_TEMP_MOTOR(3435.0f); // Read motor temperature
+        int temperature =
+            (int)NTC_TEMP_MOTOR(3435.0f); // Read motor temperature
         utils_truncate_number_int(&temperature, -128, 127);
-        int8_t current_temperature = (int8_t)temperature;                       // Constrain to int8_t range
-        UTILS_LP_MOVING_AVG_APPROX(motor_temperature, current_temperature, 10); // Apply a moving average filter
+        int8_t current_temperature =
+            (int8_t)temperature; // Constrain to int8_t range
+        UTILS_LP_MOVING_AVG_APPROX(motor_temperature, current_temperature,
+                                   10); // Apply a moving average filter
       }
     }
 
-    if (++cnt >= 50)
-    {
+    if (++cnt >= 50) {
       cnt = 0;
-      cycleiq_data_motor_update(motor_rpm, (int16_t)motor_temperature); // Update motor data
+      cycleiq_data_motor_update(
+          motor_rpm, (int16_t)motor_temperature); // Update motor data
     }
 
     timeout_reset();
