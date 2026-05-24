@@ -7,11 +7,11 @@
 
 #include "utils_math.h"
 
-static const int MAX_GEAR = 3;
+#define MAX_GEAR 3
 #ifdef CYCLEIQ_HIGH_POWER
-static const int MAX_GEAR_MOUNTAIN = 6; // Maximum gear for high power mode
+#define MAX_GEAR_MOUNTAIN 6 // Maximum gear for high power mode
 #else
-static const int MAX_GEAR_MOUNTAIN = 5; // Maximum gear for normal mode
+#define MAX_GEAR_MOUNTAIN 5 // Maximum gear for normal mode
 #endif
 
 cycleiq_config_t cycleiq_config = {
@@ -64,16 +64,16 @@ void cycleiq_change_ride_mode(void)
 
 void vesc_set_erpm_limit(void)
 {
-  const volatile mc_configuration *mcconf = mc_interface_get_configuration();
-  float max_speed = cycleiq_data.ride_mode == CYCLEIQ_RIDE_MODE_NORMAL ? 25.0f : cycleiq_config.max_speed;
-
-  float pole_pairs = mcconf->si_motor_poles / 2.0f;
-  float gear_ratio = mcconf->si_gear_ratio > 0.0f ? mcconf->si_gear_ratio : 1.0f;
-  float wheel_circumference = mcconf->si_wheel_diameter * M_PI; // Wheel circumference in meters
-
-  float max_speed_rpm = (max_speed * 1000.0f) / 60.0f * (1.0f / wheel_circumference) * gear_ratio; // Max speed in RPM
-  mcconf->l_max_erpm = max_speed_rpm * pole_pairs;
-  mcconf->l_min_erpm = -mcconf->l_max_erpm;
+  // const volatile mc_configuration *mcconf = mc_interface_get_configuration();
+  // float max_speed = cycleiq_data.ride_mode == CYCLEIQ_RIDE_MODE_NORMAL ? 25.0f : cycleiq_config.max_speed;
+  //
+  // float pole_pairs = mcconf->si_motor_poles / 2.0f;
+  // float gear_ratio = mcconf->si_gear_ratio > 0.0f ? mcconf->si_gear_ratio : 1.0f;
+  // float wheel_circumference = mcconf->si_wheel_diameter * M_PI; // Wheel circumference in meters
+  //
+  // float max_speed_rpm = (max_speed * 1000.0f) / 60.0f * (1.0f / wheel_circumference) * gear_ratio; // Max speed in RPM
+  // mcconf->l_max_erpm = max_speed_rpm * pole_pairs;
+  // mcconf->l_min_erpm = -mcconf->l_max_erpm;
 }
 
 void cycleiq_data_init(void)
