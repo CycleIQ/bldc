@@ -11,7 +11,7 @@
 #define CYCLEIQ_CAN_ID 0x6Bu
 
 #define PEAK_CAN_FRAME_ID(type_or_command)                                     \
-  (((uint32_t)CYCLEIQ_CAN_ID << 8) | (uint8_t)(type_or_command))
+  (((uint32_t)PEAK_CAN_ID << 8) | (uint8_t)(type_or_command))
 #define CYCLEIQ_CAN_NODE_ID(can_id) (((can_id) >> 8) & 0xFF)
 #define CYCLEIQ_CAN_PACKET_TYPE(can_id) ((can_id) & 0xFF)
 
@@ -151,7 +151,7 @@ static void cycleiq_send_controller_state(uint8_t *data) {
 }
 
 static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
-  if (CYCLEIQ_CAN_NODE_ID(id) != PEAK_CAN_ID) {
+  if (CYCLEIQ_CAN_NODE_ID(id) != CYCLEIQ_CAN_ID) {
     return false;
   }
 
