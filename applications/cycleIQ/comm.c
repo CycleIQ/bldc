@@ -1,35 +1,19 @@
 #include "comm.h"
-#include "comm_can.h"
-#include "commands.h"
 
+#include "ch.h"
+#include "comm_can.h"
+#include "control.h"
 #include "data.h"
 #include "datatypes.h"
 
-#include "cycleiq_utils.h"
-
-#define PEAK_CAN_ID 0x6Au
-#define CYCLEIQ_CAN_ID 0x6Bu
-
-#define PEAK_CAN_FRAME_ID(type_or_command)                                     \
-  (((uint32_t)PEAK_CAN_ID << 8) | (uint8_t)(type_or_command))
-#define CYCLEIQ_CAN_NODE_ID(can_id) (((can_id) >> 8) & 0xFF)
-#define CYCLEIQ_CAN_PACKET_TYPE(can_id) ((can_id) & 0xFF)
-
-#define PEAK_PACKET_TYPE_BATTERY_STATUS 0x10u
-#define PEAK_PACKET_TYPE_BATTERY_ENERGY 0x11u
-#define PEAK_PACKET_TYPE_MOTOR_STATUS 0x12u
-#define PEAK_PACKET_TYPE_CONTROLLER_STATE 0x13u
-#define PEAK_PACKET_TYPE_LIVE_STATUS 0x14u
-#define PEAK_PACKET_TYPE_TRIP_PRIMARY 0x15u
-#define PEAK_PACKET_TYPE_TRIP_SECONDARY 0x16u
+#include <stdbool.h>
+#include <stdint.h>
 
 #define PEAK_LIVE_STATUS_PERIOD_MS 100u
 #define PEAK_CONTROLLER_STATE_PERIOD_MS 1000u
 #define PEAK_BATTERY_STATUS_PERIOD_MS 500u
 #define PEAK_MOTOR_STATUS_PERIOD_MS 250u
 #define PEAK_SLOW_PACKET_PERIOD_MS 1000u
-
-static volatile ring_buffer_t send_buffer;
 
 static bool telemetry_timing_initialized;
 static systime_t next_battery_status_time;
@@ -45,76 +29,8 @@ static uint8_t last_controller_gear;
 static cycleiq_support_mode_t last_controller_support_mode;
 static cycleiq_ride_mode_t last_controller_ride_mode;
 
-static uint16_t cycleiq_float_to_u16(float value, float scale) {
-  if (value <= 0.0f) {
-    return 0;
-  }
-
-  value *= scale;
-  if (value >= 65535.0f) {
-    return 65535;
-  }
-
-  return (uint16_t)value;
-}
-
-static int16_t cycleiq_float_to_i16(float value, float scale) {
-  value *= scale;
-  if (value >= 32767.0f) {
-    return 32767;
-  }
-  if (value <= -32768.0f) {
-    return -32768;
-  }
-
-  return (int16_t)value;
-}
-
-static uint8_t cycleiq_float_to_u8(float value, float scale) {
-  if (value <= 0.0f) {
-    return 0;
-  }
-
-  value *= scale;
-  if (value >= 255.0f) {
-    return 255;
-  }
-
-  return (uint8_t)value;
-}
-
-static uint32_t cycleiq_float_to_u32(float value, float scale) {
-  if (value <= 0.0f) {
-    return 0;
-  }
-
-  value *= scale;
-  if (value >= 4294967295.0f) {
-    return 4294967295u;
-  }
-
-  return (uint32_t)value;
-}
-
-static void cycleiq_write_be_u16(uint8_t *out, uint16_t value) {
-  out[0] = (uint8_t)(value >> 8);
-  out[1] = (uint8_t)value;
-}
-
-static void cycleiq_write_be_i16(uint8_t *out, int16_t value) {
-  cycleiq_write_be_u16(out, (uint16_t)value);
-}
-
-static void cycleiq_write_be_u32(uint8_t *out, uint32_t value) {
-  out[0] = (uint8_t)(value >> 24);
-  out[1] = (uint8_t)(value >> 16);
-  out[2] = (uint8_t)(value >> 8);
-  out[3] = (uint8_t)value;
-}
-
-static void cycleiq_transmit_packet(uint8_t packet_type, const uint8_t *data,
-                                    uint8_t len) {
-  comm_can_transmit_eid(PEAK_CAN_FRAME_ID(packet_type), data, len);
+static void cycleiq_transmit_frame(const cycleiq_frame_t *frame) {
+  comm_can_transmit_eid(frame->id, frame->data, frame->len);
 }
 
 static bool cycleiq_time_due(systime_t now, systime_t due_time) {
@@ -138,11 +54,14 @@ static bool cycleiq_controller_state_changed(void) {
          last_controller_ride_mode != cycleiq_data.ride_mode;
 }
 
-static void cycleiq_send_controller_state(uint8_t *data) {
-  data[0] = cycleiq_data.current_gear;
-  data[1] = (uint8_t)cycleiq_data.support_mode;
-  data[2] = (uint8_t)cycleiq_data.ride_mode;
-  cycleiq_transmit_packet(PEAK_PACKET_TYPE_CONTROLLER_STATE, data, 3);
+static void cycleiq_send_controller_state(cycleiq_frame_t *frame) {
+  if (!cycleiq_telemetry_controller_state(
+          frame, cycleiq_data.current_gear, cycleiq_data.support_mode,
+          cycleiq_data.ride_mode)) {
+    return;
+  }
+
+  cycleiq_transmit_frame(frame);
 
   controller_state_sent = true;
   last_controller_gear = cycleiq_data.current_gear;
@@ -150,51 +69,63 @@ static void cycleiq_send_controller_state(uint8_t *data) {
   last_controller_ride_mode = cycleiq_data.ride_mode;
 }
 
+static void cycleiq_send_protocol_version(cycleiq_frame_t *frame) {
+  if (cycleiq_telemetry_protocol_version(frame)) {
+    cycleiq_transmit_frame(frame);
+  }
+}
+
 static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
-  if (CYCLEIQ_CAN_NODE_ID(id) != CYCLEIQ_CAN_ID) {
+  cycleiq_frame_t frame;
+  if (!cycleiq_frame_from_can(&frame, id, data, len)) {
     return false;
   }
 
-  cycleiq_command_t cmd = (cycleiq_command_t)CYCLEIQ_CAN_PACKET_TYPE(id);
+  if (!cycleiq_frame_is_for_node(&frame, CYCLEIQ_CAN_ID)) {
+    return false;
+  }
+
+  cycleiq_command_t cmd = (cycleiq_command_t)cycleiq_frame_type(&frame);
+  uint8_t value = 0;
 
   switch (cmd) {
   case CYCLEIQ_POWER_OFF:
-    // cycleiq_motor_on = false;
-    mc_interface_set_current(0.0f); // Turn off motor
+    cycleiq_data_set_motor_enabled(false);
+    cycleiq_control_stop();
     break;
-  case CYCLEIQ_POWER_ON:
-    // cycleiq_motor_on = true;
-    break;
-  case CYCLEIQ_COMM_GEAR_SET:
-    if (len < 1)
-      break;
-    if (data[0] < 1 || data[0] > cycleiq_data.max_gear)
-      break; // Invalid gear
-    cycleiq_data.current_gear = data[0];
-    break;
-  case CYCLEIQ_COMM_MODE_SET:
-    if (len < 1)
-      break;
-    if (data[0] > CYCLEIQ_MODE_HYBRID)
-      break; // Invalid mode
-    cycleiq_data.support_mode = data[0];
-    break;
-  case CYCLEIQ_COMM_RIDE_MODE_SET:
-    if (len < 1)
-      break;
-    if (data[0] > CYCLEIQ_RIDE_MODE_MOUNTAIN)
-      break; // Invalid mode
 
-    cycleiq_data.ride_mode = data[0];
-    cycleiq_change_ride_mode();
+  case CYCLEIQ_POWER_ON:
+    cycleiq_data_set_motor_enabled(true);
     break;
+
+  case CYCLEIQ_COMM_GEAR_SET:
+    if (cycleiq_command_read_u8(&frame, &value)) {
+      (void)cycleiq_data_set_gear(value);
+    }
+    break;
+
+  case CYCLEIQ_COMM_MODE_SET:
+    if (cycleiq_command_read_u8(&frame, &value)) {
+      (void)cycleiq_data_set_support_mode((cycleiq_support_mode_t)value);
+    }
+    break;
+
+  case CYCLEIQ_COMM_RIDE_MODE_SET:
+    if (cycleiq_command_read_u8(&frame, &value)) {
+      (void)cycleiq_data_set_ride_mode((cycleiq_ride_mode_t)value);
+    }
+    break;
+
   case CYCLEIQ_COMM_SCREEN_SET:
-    if (len < 1)
-      break;
-    if (data[0] > CYCLEIQ_SCREEN_GRAPH)
-      break; // Invalid screen
-    cycleiq_data.screen = (cycleiq_screen_t)data[0];
+    if (cycleiq_command_read_u8(&frame, &value)) {
+      (void)cycleiq_data_set_screen((cycleiq_screen_t)value);
+    }
     break;
+
+  case CYCLEIQ_COMM_PROTOCOL_VERSION_GET:
+    cycleiq_send_protocol_version(&frame);
+    break;
+
   default:
     break;
   }
@@ -204,7 +135,6 @@ static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 
 void cycleiq_comm_init(void) {
   comm_can_set_eid_rx_callback(&cycleIQ_CAN_rx_callback);
-  ring_buffer_init(&send_buffer, 16); // Initialize send buffer with size 16
 
   telemetry_timing_initialized = false;
   controller_state_sent = false;
@@ -212,12 +142,10 @@ void cycleiq_comm_init(void) {
 
 void cycleiq_comm_deinit(void) {
   comm_can_set_eid_rx_callback(NULL);
-  ring_buffer_clear(&send_buffer); // Clear the send buffer
-  ring_buffer_free(&send_buffer);  // Free the send buffer resources
 }
 
 void cycleiq_comm_loop(void) {
-  uint8_t data[8] = {0};
+  cycleiq_frame_t frame;
   systime_t now = chVTGetSystemTimeX();
 
   if (!telemetry_timing_initialized) {
@@ -233,63 +161,59 @@ void cycleiq_comm_loop(void) {
 
   if (cycleiq_packet_due(now, &next_live_status_time,
                          MS2ST(PEAK_LIVE_STATUS_PERIOD_MS))) {
-    cycleiq_write_be_u16(&data[0],
-                         cycleiq_float_to_u16(cycleiq_data.speed, 360.0f));
-    cycleiq_write_be_u16(&data[2], cycleiq_data.motor_power);
-    cycleiq_transmit_packet(PEAK_PACKET_TYPE_LIVE_STATUS, data, 4);
+    if (cycleiq_telemetry_live_status(&frame, cycleiq_data.speed_mps,
+                                      cycleiq_data.motor_power_w)) {
+      cycleiq_transmit_frame(&frame);
+    }
   }
 
   if (cycleiq_packet_due(now, &next_battery_status_time,
                          MS2ST(PEAK_BATTERY_STATUS_PERIOD_MS))) {
-    data[0] = cycleiq_data.battery_level;
-    cycleiq_write_be_u16(
-        &data[1], cycleiq_float_to_u16(cycleiq_data.battery_voltage, 100.0f));
-    cycleiq_write_be_i16(
-        &data[3], cycleiq_float_to_i16(cycleiq_data.battery_current, 100.0f));
-    cycleiq_transmit_packet(PEAK_PACKET_TYPE_BATTERY_STATUS, data, 5);
+    if (cycleiq_telemetry_battery_status(
+            &frame, cycleiq_data.battery_level_pct,
+            cycleiq_data.battery_voltage_v, cycleiq_data.battery_current_a)) {
+      cycleiq_transmit_frame(&frame);
+    }
   }
 
   if (cycleiq_packet_due(now, &next_motor_status_time,
                          MS2ST(PEAK_MOTOR_STATUS_PERIOD_MS))) {
-    data[0] = (uint8_t)cycleiq_data.motor_temperature;
-    data[1] = (uint8_t)cycleiq_data.controller_temperature;
-    cycleiq_write_be_i16(
-        &data[2], cycleiq_float_to_i16(cycleiq_data.motor_current, 100.0f));
-    cycleiq_write_be_u16(&data[4],
-                         cycleiq_float_to_u16(cycleiq_data.motor_rpm, 1.0f));
-    cycleiq_transmit_packet(PEAK_PACKET_TYPE_MOTOR_STATUS, data, 6);
+    if (cycleiq_telemetry_motor_status(
+            &frame, cycleiq_data.motor_temperature_c,
+            cycleiq_data.controller_temperature_c, cycleiq_data.motor_current_a,
+            cycleiq_data.motor_rpm)) {
+      cycleiq_transmit_frame(&frame);
+    }
   }
 
   if (cycleiq_controller_state_changed()) {
-    cycleiq_send_controller_state(data);
+    cycleiq_send_controller_state(&frame);
     next_controller_state_time = now + MS2ST(PEAK_CONTROLLER_STATE_PERIOD_MS);
   } else if (cycleiq_packet_due(now, &next_controller_state_time,
                                 MS2ST(PEAK_CONTROLLER_STATE_PERIOD_MS))) {
-    cycleiq_send_controller_state(data);
+    cycleiq_send_controller_state(&frame);
   }
 
   if (cycleiq_packet_due(now, &next_battery_energy_time,
                          MS2ST(PEAK_SLOW_PACKET_PERIOD_MS))) {
-    cycleiq_write_be_u16(&data[0],
-                         cycleiq_float_to_u16(cycleiq_data.watt_hours, 10.0f));
-    cycleiq_write_be_u16(&data[2],
-                         cycleiq_float_to_u16(cycleiq_data.amp_hours, 100.0f));
-    cycleiq_transmit_packet(PEAK_PACKET_TYPE_BATTERY_ENERGY, data, 4);
+    if (cycleiq_telemetry_battery_energy(&frame, cycleiq_data.watt_hours,
+                                         cycleiq_data.amp_hours)) {
+      cycleiq_transmit_frame(&frame);
+    }
   }
 
   if (cycleiq_packet_due(now, &next_trip_primary_time,
                          MS2ST(PEAK_SLOW_PACKET_PERIOD_MS))) {
-    cycleiq_write_be_u32(
-        &data[0], cycleiq_float_to_u32(cycleiq_data.trip_distance, 1000.0f));
-    cycleiq_write_be_u32(&data[4], 0); // No trip time data is tracked yet.
-    cycleiq_transmit_packet(PEAK_PACKET_TYPE_TRIP_PRIMARY, data, 8);
+    if (cycleiq_telemetry_trip_primary(&frame, cycleiq_data.trip_distance_km,
+                                       0u)) {
+      cycleiq_transmit_frame(&frame);
+    }
   }
 
   if (cycleiq_packet_due(now, &next_trip_secondary_time,
                          MS2ST(PEAK_SLOW_PACKET_PERIOD_MS))) {
-    cycleiq_write_be_u16(&data[0],
-                         0); // No trip average speed data is tracked yet.
-    data[2] = cycleiq_float_to_u8(cycleiq_data.range, 1.0f);
-    cycleiq_transmit_packet(PEAK_PACKET_TYPE_TRIP_SECONDARY, data, 3);
+    if (cycleiq_telemetry_trip_secondary(&frame, 0.0f, cycleiq_data.range_km)) {
+      cycleiq_transmit_frame(&frame);
+    }
   }
 }

@@ -1,0 +1,3 @@
+[submodule "external/cycleiq-protocol"]
+	path = external/cycleiq-protocol
+	url = git@github.com:CycleIQ/cycleiq-protocol.git

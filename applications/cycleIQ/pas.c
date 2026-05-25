@@ -326,7 +326,11 @@ void cycleiq_pas_configure(cycleiq_pas_config *conf) {
 }
 
 void cycleiq_pas_isr_handler(void) {
-  pas_handle_filtered_state_change(pas_update_state(), chVTGetSystemTimeX());
+  /*
+   * PAS decoding is sampled and debounced from TIM7. The board-level EXTI
+   * handler still calls this hook on some builds, so keep it as a cheap
+   * compatibility hook rather than doing duplicate raw-edge processing.
+   */
 }
 
 void cycleiq_pas_loop(void) {
@@ -400,7 +404,7 @@ float cycleiq_ts_get_percentage(void) {
   chSysLock();
   res = utils_map(torque_sensor_voltage, TORQUE_VOLTAGE_MIN, TORQUE_VOLTAGE_MAX,
                   0.0f, 1.0f);
-  utils_truncate_number(&res, 0.0f, 1.5f); // Max 200%
+  utils_truncate_number(&res, 0.0f, 1.5f); // Max 150%
   chSysUnlock();
   return res;
 }
