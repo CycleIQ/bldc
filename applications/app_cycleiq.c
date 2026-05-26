@@ -10,6 +10,7 @@
 #include "cycleIQ/service.h"
 
 void app_custom_start(void) {
+  cycleiq_config_load();
   cycleiq_data_init();
   cycleiq_comm_init();
   cycleiq_control_init();

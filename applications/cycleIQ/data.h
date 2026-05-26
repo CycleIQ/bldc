@@ -42,13 +42,24 @@ typedef struct CYCLEIQ_DATA
   // Ride data
   float speed_mps;
   float trip_distance_km;
+  uint32_t trip_time_s;
+  float average_speed_mps;
   float range_km;
 } cycleiq_data_t;
 
 void cycleiq_data_init(void);
 void cycleiq_data_reset(void);
 void cycleiq_config_load(void);
-void cycleiq_config_save(void);
+bool cycleiq_config_save(void);
+void cycleiq_config_discard_staged(void);
+cycleiq_config_status_t cycleiq_config_get_field(cycleiq_config_field_t field,
+                                                 uint16_t *value);
+void cycleiq_config_get_snapshot(cycleiq_config_snapshot_t *snapshot);
+cycleiq_config_status_t cycleiq_config_stage_field(cycleiq_config_field_t field,
+                                                   uint16_t value);
+cycleiq_config_status_t
+cycleiq_config_stage_snapshot(const cycleiq_config_snapshot_t *snapshot);
+cycleiq_config_status_t cycleiq_config_commit(void);
 
 void cycleiq_data_loop(void);
 void cycleiq_data_motor_sensor_update(float rpm, int8_t temperature_c);

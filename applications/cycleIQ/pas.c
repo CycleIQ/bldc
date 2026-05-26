@@ -92,7 +92,8 @@ static uint8_t pas_update_filter_counter(uint8_t counter, bool raw_high) {
   return counter;
 }
 
-static void pas_handle_filtered_state_change(int state, systime_t current_time) {
+static void pas_handle_filtered_state_change(int state,
+                                             systime_t current_time) {
   if (config.magnets == 0 || min_transition_period_ticks == 0) {
     return;
   }
@@ -108,7 +109,7 @@ static void pas_handle_filtered_state_change(int state, systime_t current_time) 
 
 #ifdef CYCLEIQ_HAS_2_WIRE_PAS
   int diff = (pas_lookup[state] - pas_lookup[prev_state] + 4) %
-             4;    // Calculate the difference in state (0-3)
+             4;  // Calculate the difference in state (0-3)
   if (diff == 2) // Invalid state (may happen due to noise)
     return;      // Ignore the state change, but don't reset the counter
 
@@ -142,9 +143,8 @@ static void pas_handle_filtered_state_change(int state, systime_t current_time) 
 
       if (pulse_period > 0) {
         last_state_change = current_time;
-        float current_rpm =
-            (60.0f * (float)CH_CFG_ST_FREQUENCY) /
-            ((float)config.magnets * (float)pulse_period);
+        float current_rpm = (60.0f * (float)CH_CFG_ST_FREQUENCY) /
+                            ((float)config.magnets * (float)pulse_period);
 
         if (last_pedal_rpm <= 0.0f) {
           last_pedal_rpm = current_rpm;
@@ -394,8 +394,7 @@ float cycleiq_ts_get_voltage(void) {
 bool cycleiq_ts_is_active(void) {
   bool res;
   chSysLock();
-  res = (torque_sensor_voltage >= TORQUE_VOLTAGE_MIN &&
-         torque_sensor_voltage <= TORQUE_VOLTAGE_MAX);
+  res = torque_sensor_voltage >= TORQUE_VOLTAGE_MIN;
   chSysUnlock();
   return res;
 }

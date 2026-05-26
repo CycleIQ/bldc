@@ -75,6 +75,107 @@ static void cycleiq_send_protocol_version(cycleiq_frame_t *frame) {
   }
 }
 
+static void cycleiq_send_config_ack(cycleiq_frame_t *frame, uint8_t command,
+                                    cycleiq_config_status_t status,
+                                    cycleiq_config_field_t detail) {
+  if (cycleiq_telemetry_config_ack(frame, command, status, detail)) {
+    cycleiq_transmit_frame(frame);
+  }
+}
+
+static uint16_t cycleiq_read_be_u16(const uint8_t *data) {
+  return ((uint16_t)data[0] << 8) | (uint16_t)data[1];
+}
+
+static void cycleiq_handle_config_get(cycleiq_frame_t *frame) {
+  cycleiq_config_field_t field = CYCLEIQ_CONFIG_FIELD_ALL;
+  if (!cycleiq_command_read_config_get(frame, &field)) {
+    cycleiq_config_status_t status =
+        frame->len == CYCLEIQ_COMMAND_CONFIG_GET_LEN
+            ? CYCLEIQ_CONFIG_STATUS_UNKNOWN_FIELD
+            : CYCLEIQ_CONFIG_STATUS_MALFORMED;
+    cycleiq_send_config_ack(frame, CYCLEIQ_COMM_CONFIG_GET, status,
+                            (cycleiq_config_field_t)frame->data[0]);
+    return;
+  }
+
+  if (field == CYCLEIQ_CONFIG_FIELD_ALL) {
+    cycleiq_config_snapshot_t snapshot;
+    cycleiq_config_get_snapshot(&snapshot);
+    if (cycleiq_telemetry_config_snapshot(frame, &snapshot)) {
+      cycleiq_transmit_frame(frame);
+    }
+    return;
+  }
+
+  uint16_t value = 0u;
+  cycleiq_config_status_t status = cycleiq_config_get_field(field, &value);
+  if (status == CYCLEIQ_CONFIG_STATUS_OK) {
+    if (cycleiq_telemetry_config_field(frame, field, value)) {
+      cycleiq_transmit_frame(frame);
+    }
+  } else {
+    cycleiq_send_config_ack(frame, CYCLEIQ_COMM_CONFIG_GET, status, field);
+  }
+}
+
+static void cycleiq_handle_config_set(cycleiq_frame_t *frame) {
+  cycleiq_config_op_t op = CYCLEIQ_CONFIG_OP_SET_FIELD;
+  if (!cycleiq_command_read_config_op(frame, &op)) {
+    cycleiq_send_config_ack(frame, CYCLEIQ_COMM_CONFIG_SET,
+                            CYCLEIQ_CONFIG_STATUS_MALFORMED,
+                            CYCLEIQ_CONFIG_FIELD_ALL);
+    return;
+  }
+
+  cycleiq_config_status_t status = CYCLEIQ_CONFIG_STATUS_OK;
+  cycleiq_config_field_t detail = CYCLEIQ_CONFIG_FIELD_ALL;
+
+  switch (op) {
+  case CYCLEIQ_CONFIG_OP_SET_FIELD:
+    if (frame->len != CYCLEIQ_COMMAND_CONFIG_SET_FIELD_LEN) {
+      status = CYCLEIQ_CONFIG_STATUS_MALFORMED;
+      break;
+    }
+    detail = (cycleiq_config_field_t)frame->data[1];
+    status = cycleiq_config_stage_field(detail,
+                                        cycleiq_read_be_u16(&frame->data[2]));
+    break;
+
+  case CYCLEIQ_CONFIG_OP_SET_SNAPSHOT: {
+    cycleiq_config_snapshot_t snapshot;
+    if (!cycleiq_command_read_config_snapshot(frame, &snapshot)) {
+      status = CYCLEIQ_CONFIG_STATUS_MALFORMED;
+      break;
+    }
+    status = cycleiq_config_stage_snapshot(&snapshot);
+    break;
+  }
+
+  case CYCLEIQ_CONFIG_OP_COMMIT:
+    if (frame->len != CYCLEIQ_COMMAND_CONFIG_SET_OP_LEN) {
+      status = CYCLEIQ_CONFIG_STATUS_MALFORMED;
+      break;
+    }
+    status = cycleiq_config_commit();
+    break;
+
+  case CYCLEIQ_CONFIG_OP_DISCARD:
+    if (frame->len != CYCLEIQ_COMMAND_CONFIG_SET_OP_LEN) {
+      status = CYCLEIQ_CONFIG_STATUS_MALFORMED;
+      break;
+    }
+    cycleiq_config_discard_staged();
+    break;
+
+  default:
+    status = CYCLEIQ_CONFIG_STATUS_MALFORMED;
+    break;
+  }
+
+  cycleiq_send_config_ack(frame, CYCLEIQ_COMM_CONFIG_SET, status, detail);
+}
+
 static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
   cycleiq_frame_t frame;
   if (!cycleiq_frame_from_can(&frame, id, data, len)) {
@@ -120,6 +221,14 @@ static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
     if (cycleiq_command_read_u8(&frame, &value)) {
       (void)cycleiq_data_set_screen((cycleiq_screen_t)value);
     }
+    break;
+
+  case CYCLEIQ_COMM_CONFIG_GET:
+    cycleiq_handle_config_get(&frame);
+    break;
+
+  case CYCLEIQ_COMM_CONFIG_SET:
+    cycleiq_handle_config_set(&frame);
     break;
 
   case CYCLEIQ_COMM_PROTOCOL_VERSION_GET:
@@ -205,14 +314,16 @@ void cycleiq_comm_loop(void) {
   if (cycleiq_packet_due(now, &next_trip_primary_time,
                          MS2ST(PEAK_SLOW_PACKET_PERIOD_MS))) {
     if (cycleiq_telemetry_trip_primary(&frame, cycleiq_data.trip_distance_km,
-                                       0u)) {
+                                       cycleiq_data.trip_time_s)) {
       cycleiq_transmit_frame(&frame);
     }
   }
 
   if (cycleiq_packet_due(now, &next_trip_secondary_time,
                          MS2ST(PEAK_SLOW_PACKET_PERIOD_MS))) {
-    if (cycleiq_telemetry_trip_secondary(&frame, 0.0f, cycleiq_data.range_km)) {
+    if (cycleiq_telemetry_trip_secondary(&frame,
+                                         cycleiq_data.average_speed_mps,
+                                         cycleiq_data.range_km)) {
       cycleiq_transmit_frame(&frame);
     }
   }
