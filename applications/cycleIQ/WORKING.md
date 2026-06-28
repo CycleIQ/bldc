@@ -145,8 +145,9 @@ Support modes currently behave as follows:
 
 If `motor_enabled` is false, target current is 0 A regardless of mode.
 
-Assist is tapered over the final 2 km/h before `max_speed_kph` and reaches 0 A
-at or above the configured maximum speed.
+In normal ride mode, assist is tapered over the final 2 km/h before
+`max_speed_kph` and reaches 0 A at or above the configured maximum speed.
+Mountain ride mode bypasses this application-level speed limit.
 
 The selected gear current is scaled by support mode and speed taper. The result
 sets both:
@@ -165,7 +166,8 @@ ramp-up path.
 
 The output ramp is explicit:
 
-- ramp up: 12 A/s
+- PAS ramp up: 40 A/s
+- torque ramp up: 80 A/s
 - normal ramp down: 40 A/s
 - fast release to zero: 80 A/s
 
@@ -206,7 +208,8 @@ Torque sensor handling:
   10 ms gaps.
 - The measured zero point is multiplied by 1.03 and used as the minimum torque
   voltage.
-- Runtime torque voltage is low-pass filtered each service loop.
+- Runtime torque voltage is low-pass filtered each 100 ms service loop with a
+  short asymmetric filter: 3 samples while rising, 2 samples while falling.
 - Torque sensor active means voltage is at or above the calibrated minimum.
 - Torque percentage maps calibrated minimum to 0.0 and 2.4 V to 1.0, then
   clamps to a maximum of 1.5.

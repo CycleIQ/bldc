@@ -15,6 +15,8 @@
 #include <math.h>
 
 #define TORQUE_SENSOR_SAMPLES 10
+#define TORQUE_SENSOR_RISE_FILTER_SAMPLES 3
+#define TORQUE_SENSOR_FALL_FILTER_SAMPLES 2
 #define PAS_SAMPLE_RATE_HZ 10000U
 #define PAS_FILTER_TIME_US 1500U
 #define PAS_FILTER_SAMPLES                                                     \
@@ -255,7 +257,7 @@ void cycleiq_pas_init(void) {
       1.03f; // Apply slight offset to account for ADC inaccuracies (3%)
 
   TORQUE_VOLTAGE_MIN = torque_sensor_voltage;
-  torque_sensor_voltage = 0.0f; // Reset the filtered voltage
+  torque_sensor_voltage = TORQUE_VOLTAGE_MIN;
 }
 
 void cycleiq_pas_deinit(void) {
@@ -337,8 +339,19 @@ void cycleiq_pas_loop(void) {
   systime_t current_time = chVTGetSystemTimeX();
 
   float ts_voltage = ADC_VOLTS(TS_INDEX); // Read the torque sensor voltage
-  UTILS_LP_MOVING_AVG_APPROX(torque_sensor_voltage, ts_voltage,
-                             50); // Apply a moving average filter
+  if (isfinite(ts_voltage)) {
+    /*
+     * This loop runs every 100 ms. A large symmetric filter makes torque assist
+     * feel disconnected and keeps assist alive long after rider torque is gone.
+     */
+    float filter_samples = ts_voltage < torque_sensor_voltage
+                               ? TORQUE_SENSOR_FALL_FILTER_SAMPLES
+                               : TORQUE_SENSOR_RISE_FILTER_SAMPLES;
+    UTILS_LP_MOVING_AVG_APPROX(torque_sensor_voltage, ts_voltage,
+                               filter_samples);
+  } else {
+    torque_sensor_voltage = 0.0f;
+  }
 
   if (last_state_change == 0 ||
       current_time - last_state_change > max_pulse_period_ticks) {

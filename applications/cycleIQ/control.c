@@ -11,7 +11,8 @@
 #define CYCLEIQ_MIN_DUTY_FOR_CURRENT_ESTIMATE 0.02f
 #define CYCLEIQ_SERVICE_PERIOD_S 0.1f
 #define CYCLEIQ_SPEED_TAPER_WINDOW_KPH 2.0f
-#define CYCLEIQ_PHASE_RAMP_UP_A_PER_S 12.0f
+#define CYCLEIQ_PHASE_RAMP_UP_PAS_A_PER_S 40.0f
+#define CYCLEIQ_PHASE_RAMP_UP_TORQUE_A_PER_S 80.0f
 #define CYCLEIQ_PHASE_RAMP_DOWN_A_PER_S 40.0f
 #define CYCLEIQ_PHASE_RELEASE_A_PER_S 80.0f
 #define CYCLEIQ_BATTERY_OVERCURRENT_PHASE_GAIN 2.0f
@@ -81,6 +82,10 @@ static cycleiq_gear_limits_t gear_limits_for_gear(uint8_t gear,
 }
 
 static float speed_taper_factor(void) {
+  if (cycleiq_data.ride_mode == CYCLEIQ_RIDE_MODE_MOUNTAIN) {
+    return 1.0f;
+  }
+
   float max_speed_kph = cycleiq_config.max_speed_kph;
   if (max_speed_kph <= 0.0f) {
     return 0.0f;
@@ -136,10 +141,18 @@ static float positive_phase_current_limit(void) {
   return max_current_a;
 }
 
+static float ramp_up_rate_for_mode(void) {
+  if (cycleiq_data.support_mode == CYCLEIQ_MODE_TORQUE) {
+    return CYCLEIQ_PHASE_RAMP_UP_TORQUE_A_PER_S;
+  }
+
+  return CYCLEIQ_PHASE_RAMP_UP_PAS_A_PER_S;
+}
+
 static float ramped_phase_current(float target_phase_current_a,
                                   bool release_fast) {
   float delta_a = target_phase_current_a - phase_current_output_a;
-  float ramp_limit_a = CYCLEIQ_PHASE_RAMP_UP_A_PER_S * CYCLEIQ_SERVICE_PERIOD_S;
+  float ramp_limit_a = ramp_up_rate_for_mode() * CYCLEIQ_SERVICE_PERIOD_S;
 
   if (delta_a < 0.0f) {
     float ramp_down_a = release_fast ? CYCLEIQ_PHASE_RELEASE_A_PER_S

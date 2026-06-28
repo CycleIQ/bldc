@@ -86,8 +86,17 @@
 //#include "finn/app_finn_az_conf.h"
 
 #include "hw.h"
-#include "mcconf_default.h"
-#include "appconf_default.h"
+
+#ifndef MCCONF_DEFAULT_HEADER
+#define MCCONF_DEFAULT_HEADER "mcconf_default.h"
+#endif
+
+#ifndef APPCONF_DEFAULT_HEADER
+#define APPCONF_DEFAULT_HEADER "appconf_default.h"
+#endif
+
+#include MCCONF_DEFAULT_HEADER
+#include APPCONF_DEFAULT_HEADER
 
 /*
  * Enable blackmagic probe output on SWD port

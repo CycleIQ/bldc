@@ -508,15 +508,22 @@ void cycleiq_data_loop(void)
 
 void cycleiq_data_motor_sensor_update(float rpm, int8_t temperature_c)
 {
+  if (!isfinite(rpm) || rpm < 0.0f) {
+    rpm = 0.0f;
+  }
+
   cycleiq_data.motor_rpm = rpm;
   cycleiq_data.motor_temperature_c = temperature_c;
 
   // Update the speed based on RPM
   cycleiq_data.speed_mps = (rpm * cycleiq_config.wheel_diameter_m * M_PI) / 60.0f;
+  if (!isfinite(cycleiq_data.speed_mps) || cycleiq_data.speed_mps < 0.0f) {
+    cycleiq_data.speed_mps = 0.0f;
+  }
 }
 
 bool cycleiq_data_set_gear(uint8_t gear) {
-  if (gear < 1 || gear > cycleiq_data.max_gear) {
+  if (gear > cycleiq_data.max_gear) {
     return false;
   }
 

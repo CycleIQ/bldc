@@ -157,14 +157,18 @@ fw_$(1): fw_$(1)_vescfw
 
 fw_$(1)_vescfw: $(eval HW_DIR = $(dir $(filter %/hw_$(1).h, $(TARGET_PATHS))))  # Find the directory for this header file
 fw_$(1)_vescfw: $(eval HW_SRC_FILE = $(call FIND_TARGET_C_CODE,$(1),$(HW_DIR)))  # Find the c code associated to this header file
+fw_$(1)_vescfw: $(eval MC_CONF_HEADER = $(wildcard $(HW_DIR)/mcconf_$(1).h))
+fw_$(1)_vescfw: $(eval APP_CONF_HEADER = $(wildcard $(HW_DIR)/appconf_$(1).h))
 fw_$(1)_vescfw:
 	@echo "********* BUILD: $(1) **********"
+	$(V1) test -n "$(MC_CONF_HEADER)" || { echo "Missing motor config: $(HW_DIR)/mcconf_$(1).h"; exit 1; }
+	$(V1) test -n "$(APP_CONF_HEADER)" || { echo "Missing app config: $(HW_DIR)/appconf_$(1).h"; exit 1; }
 	$(V1) $(MKDIR) $(BUILD_DIR)/$(1)
 	$(V1) $$(MAKE) -f $(MAKE_DIR)/fw.mk \
 		TCHAIN_PREFIX="$(ARM_SDK_PREFIX)" \
 		BUILDDIR="$(2)" \
 		PROJECT="$(3)" \
-		build_args='-DHW_SOURCE=\"$(HW_SRC_FILE)\" -DHW_HEADER=\"$(HW_DIR)/hw_$(1).h\" -DGIT_BRANCH_NAME=\"$(4)\" -DGIT_COMMIT_HASH=\"$(5)\" -DARM_GCC_VERSION=\"$(6)\"' USE_VERBOSE_COMPILE=no
+		build_args='-DHW_SOURCE=\"$(HW_SRC_FILE)\" -DHW_HEADER=\"$(HW_DIR)/hw_$(1).h\" -DMCCONF_DEFAULT_HEADER=\"$(MC_CONF_HEADER)\" -DAPPCONF_DEFAULT_HEADER=\"$(APP_CONF_HEADER)\" -DGIT_BRANCH_NAME=\"$(4)\" -DGIT_COMMIT_HASH=\"$(5)\" -DARM_GCC_VERSION=\"$(6)\"' USE_VERBOSE_COMPILE=no
 
 $(1)_flash: fw_$(1)_flash
 fw_$(1)_flash: fw_$(1)_vescfw fw_$(1)_flash_only
