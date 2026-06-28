@@ -1,0 +1,107 @@
+name: Firmware
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  ARM_TOOLCHAIN_DIR: tools/gcc-arm-none-eabi-7-2018-q2-update
+
+jobs:
+  build:
+    name: Build cycleIQ firmware
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.CYCLEIQ_PROTOCOL_DEPLOY_KEY }}
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bzip2 git make python3 unzip wget
+
+      - name: Cache ARM GCC
+        id: cache-arm-gcc
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ARM_TOOLCHAIN_DIR }}
+          key: ${{ runner.os }}-gcc-arm-none-eabi-7-2018-q2-update
+
+      - name: Install ARM GCC
+        if: steps.cache-arm-gcc.outputs.cache-hit != 'true'
+        run: make arm_sdk_install
+
+      - name: Show ARM GCC version
+        run: ${{ env.ARM_TOOLCHAIN_DIR }}/bin/arm-none-eabi-gcc --version
+
+      - name: Build firmware
+        run: |
+          make cycleiq_mini
+          make cycleiq_75_100
+
+      - name: Upload firmware binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: cycleiq-firmware-bin
+          if-no-files-found: error
+          path: |
+            build/cycleiq_mini/cycleiq_mini.bin
+            build/cycleiq_75_100/cycleiq_75_100.bin
+
+  release:
+    name: Publish tagged release
+    runs-on: ubuntu-22.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Validate release tag
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must match vX.Y.Z, got: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Download firmware binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: cycleiq-firmware-bin
+          path: firmware-bin
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          mkdir -p release
+
+          mini_bin="$(find firmware-bin -name cycleiq_mini.bin -print -quit)"
+          full_bin="$(find firmware-bin -name cycleiq_75_100.bin -print -quit)"
+
+          test -n "$mini_bin"
+          test -n "$full_bin"
+
+          cp "$mini_bin" "release/cycleiq_mini-${tag}.bin"
+          cp "$full_bin" "release/cycleiq_75_100-${tag}.bin"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            release/*.bin \
+            --generate-notes \
+            --title "$GITHUB_REF_NAME"
