@@ -9,7 +9,7 @@
 
 #include <stdbool.h>
 
-#define CYCLEIQ_SERVICE_PERIOD_MS 100u
+#define CYCLEIQ_SERVICE_PERIOD_MS 10u
 
 static THD_FUNCTION(cycleiq_service_thread, arg);
 static THD_WORKING_AREA(cycleiq_service_thread_wa, 1024);

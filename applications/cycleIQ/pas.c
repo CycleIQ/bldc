@@ -15,8 +15,8 @@
 #include <math.h>
 
 #define TORQUE_SENSOR_SAMPLES 10
-#define TORQUE_SENSOR_RISE_FILTER_SAMPLES 3
-#define TORQUE_SENSOR_FALL_FILTER_SAMPLES 2
+#define TORQUE_SENSOR_RISE_FILTER_SAMPLES 30
+#define TORQUE_SENSOR_FALL_FILTER_SAMPLES 18
 #define PAS_SAMPLE_RATE_HZ 10000U
 #define PAS_FILTER_TIME_US 1500U
 #define PAS_FILTER_SAMPLES                                                     \
@@ -341,7 +341,7 @@ void cycleiq_pas_loop(void) {
   float ts_voltage = ADC_VOLTS(TS_INDEX); // Read the torque sensor voltage
   if (isfinite(ts_voltage)) {
     /*
-     * This loop runs every 100 ms. A large symmetric filter makes torque assist
+     * This loop runs every 10 ms. A large symmetric filter makes torque assist
      * feel disconnected and keeps assist alive long after rider torque is gone.
      */
     float filter_samples = ts_voltage < torque_sensor_voltage

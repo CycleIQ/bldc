@@ -28,7 +28,7 @@ configuration.
 
 ## Main Service Loop
 
-`service.c` runs the main `CYCLEIQ` thread every 100 ms. Each iteration:
+`service.c` runs the main `CYCLEIQ` thread every 10 ms. Each iteration:
 
 1. Updates PAS and torque-sensor state.
 2. Refreshes battery, current, controller temperature, and power fields.
@@ -167,9 +167,11 @@ ramp-up path.
 The output ramp is explicit:
 
 - PAS ramp up: 40 A/s
-- torque ramp up: 80 A/s
-- normal ramp down: 40 A/s
-- fast release to zero: 80 A/s
+- PAS ramp down: 40 A/s
+- PAS fast release to zero: 80 A/s
+- torque ramp up: 150 A/s
+- torque ramp down while active: 150 A/s
+- torque fast release to zero: 300 A/s
 
 The final command is saturated to the live positive phase-current limit, using
 `lo_current_max` when available and falling back to `l_current_max`. VESC remains
@@ -208,8 +210,8 @@ Torque sensor handling:
   10 ms gaps.
 - The measured zero point is multiplied by 1.03 and used as the minimum torque
   voltage.
-- Runtime torque voltage is low-pass filtered each 100 ms service loop with a
-  short asymmetric filter: 3 samples while rising, 2 samples while falling.
+- Runtime torque voltage is low-pass filtered each 10 ms service loop with a
+  short asymmetric filter: 30 samples while rising, 18 samples while falling.
 - Torque sensor active means voltage is at or above the calibrated minimum.
 - Torque percentage maps calibrated minimum to 0.0 and 2.4 V to 1.0, then
   clamps to a maximum of 1.5.

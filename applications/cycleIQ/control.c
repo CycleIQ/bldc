@@ -9,12 +9,14 @@
 
 #define CYCLEIQ_BATTERY_LIMIT_START_DUTY 0.33f
 #define CYCLEIQ_MIN_DUTY_FOR_CURRENT_ESTIMATE 0.02f
-#define CYCLEIQ_SERVICE_PERIOD_S 0.1f
+#define CYCLEIQ_SERVICE_PERIOD_S 0.01f
 #define CYCLEIQ_SPEED_TAPER_WINDOW_KPH 2.0f
 #define CYCLEIQ_PHASE_RAMP_UP_PAS_A_PER_S 40.0f
-#define CYCLEIQ_PHASE_RAMP_UP_TORQUE_A_PER_S 80.0f
-#define CYCLEIQ_PHASE_RAMP_DOWN_A_PER_S 40.0f
-#define CYCLEIQ_PHASE_RELEASE_A_PER_S 80.0f
+#define CYCLEIQ_PHASE_RAMP_DOWN_PAS_A_PER_S 40.0f
+#define CYCLEIQ_PHASE_RELEASE_PAS_A_PER_S 80.0f
+#define CYCLEIQ_PHASE_RAMP_UP_TORQUE_A_PER_S 150.0f
+#define CYCLEIQ_PHASE_RAMP_DOWN_TORQUE_A_PER_S 150.0f
+#define CYCLEIQ_PHASE_RELEASE_TORQUE_A_PER_S 300.0f
 #define CYCLEIQ_BATTERY_OVERCURRENT_PHASE_GAIN 2.0f
 
 typedef struct {
@@ -149,15 +151,24 @@ static float ramp_up_rate_for_mode(void) {
   return CYCLEIQ_PHASE_RAMP_UP_PAS_A_PER_S;
 }
 
+static float ramp_down_rate_for_mode(bool release_fast) {
+  if (cycleiq_data.support_mode == CYCLEIQ_MODE_TORQUE) {
+    return release_fast ? CYCLEIQ_PHASE_RELEASE_TORQUE_A_PER_S
+                        : CYCLEIQ_PHASE_RAMP_DOWN_TORQUE_A_PER_S;
+  }
+
+  return release_fast ? CYCLEIQ_PHASE_RELEASE_PAS_A_PER_S
+                      : CYCLEIQ_PHASE_RAMP_DOWN_PAS_A_PER_S;
+}
+
 static float ramped_phase_current(float target_phase_current_a,
                                   bool release_fast) {
   float delta_a = target_phase_current_a - phase_current_output_a;
   float ramp_limit_a = ramp_up_rate_for_mode() * CYCLEIQ_SERVICE_PERIOD_S;
 
   if (delta_a < 0.0f) {
-    float ramp_down_a = release_fast ? CYCLEIQ_PHASE_RELEASE_A_PER_S
-                                     : CYCLEIQ_PHASE_RAMP_DOWN_A_PER_S;
-    ramp_limit_a = ramp_down_a * CYCLEIQ_SERVICE_PERIOD_S;
+    ramp_limit_a =
+        ramp_down_rate_for_mode(release_fast) * CYCLEIQ_SERVICE_PERIOD_S;
   }
 
   utils_truncate_number(&delta_a, -ramp_limit_a, ramp_limit_a);
