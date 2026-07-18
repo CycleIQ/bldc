@@ -8,10 +8,12 @@
 #include "cycleIQ/pas.h"
 #include "cycleIQ/sensors.h"
 #include "cycleIQ/service.h"
+#include "cycleIQ/walk.h"
 
 void app_custom_start(void) {
   cycleiq_config_load();
   cycleiq_data_init();
+  cycleiq_walk_init();
   cycleiq_comm_init();
   cycleiq_control_init();
 
@@ -34,9 +36,10 @@ void app_custom_stop(void) {
   cycleiq_service_stop();
   cycleiq_sensors_stop();
 
+  cycleiq_comm_deinit();
+  cycleiq_walk_set_enabled(false);
   cycleiq_control_stop();
   cycleiq_pas_deinit();
-  cycleiq_comm_deinit();
   cycleiq_pas_configure(&(cycleiq_pas_config){0});
 }
 

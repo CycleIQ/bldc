@@ -4,6 +4,7 @@
 #include "mc_interface.h"
 #include "pas.h"
 #include "utils_math.h"
+#include "walk.h"
 
 #include <math.h>
 
@@ -18,6 +19,9 @@
 #define CYCLEIQ_PHASE_RAMP_DOWN_TORQUE_A_PER_S 150.0f
 #define CYCLEIQ_PHASE_RELEASE_TORQUE_A_PER_S 300.0f
 #define CYCLEIQ_BATTERY_OVERCURRENT_PHASE_GAIN 2.0f
+#define CYCLEIQ_WALK_BATTERY_CURRENT_A 2.0f
+#define CYCLEIQ_WALK_FULL_SPEED_KPH 5.0f
+#define CYCLEIQ_WALK_MAX_SPEED_KPH 6.0f
 
 typedef struct {
   float battery_current_limit_a;
@@ -42,6 +46,7 @@ static const float gear_currents_mountain_a[] = {
 };
 
 static float phase_current_output_a;
+static bool walk_was_active;
 
 static uint8_t clamp_gear_index(uint8_t gear, uint8_t max_index) {
   if (gear > max_index) {
@@ -108,6 +113,33 @@ static float speed_taper_factor(void) {
   return factor;
 }
 
+static float walk_speed_taper_factor(void) {
+  float motor_speed_mps = mc_interface_get_speed();
+  if (!isfinite(motor_speed_mps)) {
+    return 0.0f;
+  }
+
+  float speed_mps = fabsf(motor_speed_mps);
+  float wheel_speed_mps = cycleiq_data.speed_mps;
+  if (isfinite(wheel_speed_mps) && wheel_speed_mps > speed_mps) {
+    speed_mps = wheel_speed_mps;
+  }
+
+  float speed_kph = speed_mps * 3.6f;
+  if (speed_kph >= CYCLEIQ_WALK_MAX_SPEED_KPH) {
+    return 0.0f;
+  }
+  if (speed_kph <= CYCLEIQ_WALK_FULL_SPEED_KPH) {
+    return 1.0f;
+  }
+
+  float factor =
+      (CYCLEIQ_WALK_MAX_SPEED_KPH - speed_kph) /
+      (CYCLEIQ_WALK_MAX_SPEED_KPH - CYCLEIQ_WALK_FULL_SPEED_KPH);
+  utils_truncate_number(&factor, 0.0f, 1.0f);
+  return factor;
+}
+
 static float support_factor(void) {
   if (!cycleiq_data.motor_enabled) {
     return 0.0f;
@@ -143,7 +175,11 @@ static float positive_phase_current_limit(void) {
   return max_current_a;
 }
 
-static float ramp_up_rate_for_mode(void) {
+static float ramp_up_rate_for_mode(bool walk_active) {
+  if (walk_active) {
+    return CYCLEIQ_PHASE_RAMP_UP_PAS_A_PER_S;
+  }
+
   if (cycleiq_data.support_mode == CYCLEIQ_MODE_TORQUE) {
     return CYCLEIQ_PHASE_RAMP_UP_TORQUE_A_PER_S;
   }
@@ -151,7 +187,12 @@ static float ramp_up_rate_for_mode(void) {
   return CYCLEIQ_PHASE_RAMP_UP_PAS_A_PER_S;
 }
 
-static float ramp_down_rate_for_mode(bool release_fast) {
+static float ramp_down_rate_for_mode(bool release_fast, bool walk_active) {
+  if (walk_active) {
+    return release_fast ? CYCLEIQ_PHASE_RELEASE_PAS_A_PER_S
+                        : CYCLEIQ_PHASE_RAMP_DOWN_PAS_A_PER_S;
+  }
+
   if (cycleiq_data.support_mode == CYCLEIQ_MODE_TORQUE) {
     return release_fast ? CYCLEIQ_PHASE_RELEASE_TORQUE_A_PER_S
                         : CYCLEIQ_PHASE_RAMP_DOWN_TORQUE_A_PER_S;
@@ -162,13 +203,14 @@ static float ramp_down_rate_for_mode(bool release_fast) {
 }
 
 static float ramped_phase_current(float target_phase_current_a,
-                                  bool release_fast) {
+                                  bool release_fast, bool walk_active) {
   float delta_a = target_phase_current_a - phase_current_output_a;
-  float ramp_limit_a = ramp_up_rate_for_mode() * CYCLEIQ_SERVICE_PERIOD_S;
+  float ramp_limit_a =
+      ramp_up_rate_for_mode(walk_active) * CYCLEIQ_SERVICE_PERIOD_S;
 
   if (delta_a < 0.0f) {
-    ramp_limit_a =
-        ramp_down_rate_for_mode(release_fast) * CYCLEIQ_SERVICE_PERIOD_S;
+    ramp_limit_a = ramp_down_rate_for_mode(release_fast, walk_active) *
+                   CYCLEIQ_SERVICE_PERIOD_S;
   }
 
   utils_truncate_number(&delta_a, -ramp_limit_a, ramp_limit_a);
@@ -177,18 +219,38 @@ static float ramped_phase_current(float target_phase_current_a,
 
 void cycleiq_control_init(void) {
   phase_current_output_a = 0.0f;
+  walk_was_active = false;
   mc_interface_set_current(0.0f);
 }
 
 void cycleiq_control_stop(void) {
   phase_current_output_a = 0.0f;
+  walk_was_active = false;
   mc_interface_set_current(0.0f);
 }
 
 void cycleiq_control_loop(void) {
-  cycleiq_gear_limits_t gear_limits =
-      gear_limits_for_gear(cycleiq_data.current_gear, cycleiq_data.ride_mode);
-  float demand_factor = support_factor() * speed_taper_factor();
+  bool walk_active = cycleiq_walk_is_active();
+  if (!walk_active && walk_was_active) {
+    walk_was_active = false;
+    phase_current_output_a = 0.0f;
+    mc_interface_set_current(0.0f);
+    return;
+  }
+  walk_was_active = walk_active;
+
+  cycleiq_gear_limits_t gear_limits;
+  float demand_factor;
+  if (walk_active) {
+    gear_limits = gear_limits_for_current(CYCLEIQ_WALK_BATTERY_CURRENT_A);
+    demand_factor = cycleiq_data.motor_enabled
+                        ? walk_speed_taper_factor()
+                        : 0.0f;
+  } else {
+    gear_limits =
+        gear_limits_for_gear(cycleiq_data.current_gear, cycleiq_data.ride_mode);
+    demand_factor = support_factor() * speed_taper_factor();
+  }
   utils_truncate_number(&demand_factor, 0.0f, 1.0f);
 
   float target_battery_current_a =
@@ -228,8 +290,17 @@ void cycleiq_control_loop(void) {
   float max_current_a = positive_phase_current_limit();
   utils_truncate_number(&target_phase_current_a, 0.0f, max_current_a);
 
+  if (walk_active && target_phase_current_a <= 0.0f) {
+    phase_current_output_a = 0.0f;
+    mc_interface_set_current(0.0f);
+    return;
+  }
+  if (walk_active && phase_current_output_a > target_phase_current_a) {
+    phase_current_output_a = target_phase_current_a;
+  }
+
   phase_current_output_a =
-      ramped_phase_current(target_phase_current_a, release_fast);
+      ramped_phase_current(target_phase_current_a, release_fast, walk_active);
   utils_truncate_number(&phase_current_output_a, 0.0f, max_current_a);
   mc_interface_set_current(phase_current_output_a);
 }

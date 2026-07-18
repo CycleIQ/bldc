@@ -5,6 +5,7 @@
 #include "control.h"
 #include "data.h"
 #include "datatypes.h"
+#include "walk.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,6 +15,7 @@
 #define PEAK_BATTERY_STATUS_PERIOD_MS 500u
 #define PEAK_MOTOR_STATUS_PERIOD_MS 250u
 #define PEAK_SLOW_PACKET_PERIOD_MS 1000u
+#define PEAK_WALK_STATE_PERIOD_MS 1000u
 
 static bool telemetry_timing_initialized;
 static systime_t next_battery_status_time;
@@ -23,11 +25,14 @@ static systime_t next_controller_state_time;
 static systime_t next_live_status_time;
 static systime_t next_trip_primary_time;
 static systime_t next_trip_secondary_time;
+static systime_t next_walk_state_time;
 
 static bool controller_state_sent;
 static uint8_t last_controller_gear;
 static cycleiq_support_mode_t last_controller_support_mode;
 static cycleiq_ride_mode_t last_controller_ride_mode;
+static bool walk_state_sent;
+static bool last_walk_active;
 
 static void cycleiq_transmit_frame(const cycleiq_frame_t *frame) {
   comm_can_transmit_eid(frame->id, frame->data, frame->len);
@@ -73,6 +78,20 @@ static void cycleiq_send_protocol_version(cycleiq_frame_t *frame) {
   if (cycleiq_telemetry_protocol_version(frame)) {
     cycleiq_transmit_frame(frame);
   }
+}
+
+static bool cycleiq_walk_state_changed(bool walk_active) {
+  return !walk_state_sent || last_walk_active != walk_active;
+}
+
+static void cycleiq_send_walk_state(cycleiq_frame_t *frame, bool walk_active) {
+  if (!cycleiq_telemetry_walk_state(frame, walk_active)) {
+    return;
+  }
+
+  cycleiq_transmit_frame(frame);
+  walk_state_sent = true;
+  last_walk_active = walk_active;
 }
 
 static void cycleiq_send_config_ack(cycleiq_frame_t *frame, uint8_t command,
@@ -188,9 +207,11 @@ static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 
   cycleiq_command_t cmd = (cycleiq_command_t)cycleiq_frame_type(&frame);
   uint8_t value = 0;
+  bool walk_enabled = false;
 
   switch (cmd) {
   case CYCLEIQ_POWER_OFF:
+    cycleiq_walk_set_enabled(false);
     cycleiq_data_set_motor_enabled(false);
     cycleiq_control_stop();
     break;
@@ -223,6 +244,13 @@ static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
     }
     break;
 
+  case CYCLEIQ_COMM_WALK_SET:
+    if (cycleiq_command_read_walk_mode(&frame, &walk_enabled) &&
+        (!walk_enabled || cycleiq_data.motor_enabled)) {
+      cycleiq_walk_set_enabled(walk_enabled);
+    }
+    break;
+
   case CYCLEIQ_COMM_CONFIG_GET:
     cycleiq_handle_config_get(&frame);
     break;
@@ -247,6 +275,7 @@ void cycleiq_comm_init(void) {
 
   telemetry_timing_initialized = false;
   controller_state_sent = false;
+  walk_state_sent = false;
 }
 
 void cycleiq_comm_deinit(void) {
@@ -265,6 +294,7 @@ void cycleiq_comm_loop(void) {
     next_battery_energy_time = now + MS2ST(350);
     next_trip_primary_time = now + MS2ST(550);
     next_trip_secondary_time = now + MS2ST(750);
+    next_walk_state_time = now + MS2ST(850);
     telemetry_timing_initialized = true;
   }
 
@@ -301,6 +331,15 @@ void cycleiq_comm_loop(void) {
   } else if (cycleiq_packet_due(now, &next_controller_state_time,
                                 MS2ST(PEAK_CONTROLLER_STATE_PERIOD_MS))) {
     cycleiq_send_controller_state(&frame);
+  }
+
+  bool walk_active = cycleiq_walk_is_active();
+  if (cycleiq_walk_state_changed(walk_active)) {
+    cycleiq_send_walk_state(&frame, walk_active);
+    next_walk_state_time = now + MS2ST(PEAK_WALK_STATE_PERIOD_MS);
+  } else if (cycleiq_packet_due(now, &next_walk_state_time,
+                                MS2ST(PEAK_WALK_STATE_PERIOD_MS))) {
+    cycleiq_send_walk_state(&frame, walk_active);
   }
 
   if (cycleiq_packet_due(now, &next_battery_energy_time,

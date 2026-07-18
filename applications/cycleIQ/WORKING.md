@@ -8,7 +8,7 @@ shared `external/cycleiq-protocol` SDK.
 
 `app_custom_start()` initializes the app in this order:
 
-1. Resets cycleIQ runtime data.
+1. Resets cycleIQ runtime data and initializes Walk Mode inactive.
 2. Registers the CAN receive callback.
 3. Resets motor current output to 0 A.
 4. Initializes PAS and torque sensor state.
@@ -20,9 +20,9 @@ shared `external/cycleiq-protocol` SDK.
 6. Starts the motor speed/temperature sensor worker.
 7. Starts the main cycleIQ service thread.
 
-`app_custom_stop()` stops the service thread first, then the sensor worker, then
-forces motor current to 0 A, deinitializes PAS, unregisters CAN, and clears PAS
-configuration.
+`app_custom_stop()` stops the service thread first, then the sensor worker,
+unregisters CAN so no new walk heartbeat can arrive, clears Walk Mode, forces
+motor current to 0 A, deinitializes PAS, and clears PAS configuration.
 
 `app_custom_configure()` currently ignores VESC app configuration.
 
@@ -32,9 +32,10 @@ configuration.
 
 1. Updates PAS and torque-sensor state.
 2. Refreshes battery, current, controller temperature, and power fields.
-3. Sends due CAN telemetry packets.
-4. Computes and applies the motor current command.
-5. Resets the VESC timeout watchdog.
+3. Expires Walk Mode if its command heartbeat is stale.
+4. Sends due CAN telemetry packets.
+5. Computes and applies the motor current command.
+6. Resets the VESC timeout watchdog.
 
 On stop, the service thread calls `cycleiq_control_stop()` before exiting.
 
@@ -149,6 +150,19 @@ In normal ride mode, assist is tapered over the final 2 km/h before
 `max_speed_kph` and reaches 0 A at or above the configured maximum speed.
 Mountain ride mode bypasses this application-level speed limit.
 
+Walk Mode overrides PAS, torque, gear, and ride mode while active. It uses a
+fixed 2.0 A battery-current target and a derived phase-current ceiling of about
+6.06 A. It applies full demand below 5 km/h, linearly tapers demand from 5 to
+6 km/h, and commands 0 A at or above 6 km/h. The limit uses the greater of the
+absolute VESC motor-derived speed and valid cycleIQ wheel speed. A non-finite
+motor-derived speed fails safe to 0 A.
+
+Walk Mode starts only from a valid ON command while the motor is enabled. Every
+valid ON command refreshes a 1000 ms deadline. OFF, deadline expiry, power-off,
+or application shutdown clears the mode. OFF and expiry clear the phase-current
+accumulator and command 0 A in the next 10 ms control iteration; regular assist
+is reconsidered on the following iteration.
+
 The selected gear current is scaled by support mode and speed taper. The result
 sets both:
 
@@ -262,6 +276,7 @@ Implemented commands:
 | `CYCLEIQ_COMM_MODE_SET` | reads one byte and sets PAS/torque/hybrid mode if valid |
 | `CYCLEIQ_COMM_RIDE_MODE_SET` | reads one byte and sets normal/mountain mode if valid |
 | `CYCLEIQ_COMM_SCREEN_SET` | reads one byte and sets display screen state if valid |
+| `CYCLEIQ_COMM_WALK_SET` | reads an exact one-byte boolean; ON activates/refreshes Walk Mode and OFF clears it |
 | `CYCLEIQ_COMM_CONFIG_GET` | replies with a config snapshot or a single config field |
 | `CYCLEIQ_COMM_CONFIG_SET` | stages config field/snapshot updates, commits staged config, or discards staged config |
 | `CYCLEIQ_COMM_PROTOCOL_VERSION_GET` | replies with protocol and SDK versions |
@@ -284,6 +299,7 @@ Scheduled telemetry:
 | battery status | 500 ms | battery percent, voltage, battery current |
 | motor status | 250 ms | motor temp, controller temp, motor current, motor RPM |
 | controller state | 1000 ms, or immediately on change | gear, support mode, ride mode |
+| walk state | 1000 ms, or immediately on change | confirmed Walk Mode active state |
 | battery energy | 1000 ms | watt-hours and amp-hours |
 | trip primary | 1000 ms | trip distance and trip time |
 | trip secondary | 1000 ms | average speed and range |
@@ -293,6 +309,13 @@ Scheduled telemetry:
 
 Initial transmit offsets are staggered so the first service loop does not emit
 all slower packets at once.
+
+The display implements Walk Mode as hold-to-run: send ON immediately when the
+button is pressed, repeat ON every 250 ms while held, and send OFF immediately
+on release or input cancellation. The 1000 ms ESC timeout remains the fail-safe
+for a lost display, reset, or interrupted CAN connection. The display should use
+walk-state telemetry, rather than its local button state, for its active-mode
+indicator.
 
 Current telemetry limitations:
 

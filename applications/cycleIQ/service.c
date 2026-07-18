@@ -6,6 +6,7 @@
 #include "data.h"
 #include "pas.h"
 #include "timeout.h"
+#include "walk.h"
 
 #include <stdbool.h>
 
@@ -46,6 +47,7 @@ static THD_FUNCTION(cycleiq_service_thread, arg) {
 
     cycleiq_pas_loop();
     cycleiq_data_loop();
+    cycleiq_walk_loop();
     cycleiq_comm_loop();
     cycleiq_control_loop();
 

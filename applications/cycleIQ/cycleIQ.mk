@@ -2,6 +2,7 @@ APPSRC += applications/cycleIQ/pas.c \
 					applications/cycleIQ/data.c \
 					applications/cycleIQ/comm.c \
 					applications/cycleIQ/control.c \
+					applications/cycleIQ/walk.c \
 					applications/cycleIQ/sensors.c \
 					applications/cycleIQ/service.c
 
