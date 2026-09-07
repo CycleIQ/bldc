@@ -31,5 +31,6 @@ float cycleiq_pas_get_pedal_rpm(void);
 float cycleiq_ts_get_voltage(void);
 float cycleiq_ts_get_percentage(void);
 bool cycleiq_ts_is_active(void);
+bool cycleiq_ts_should_release_fast(void);
 
 #endif

@@ -15,8 +15,18 @@
 #include <math.h>
 
 #define TORQUE_SENSOR_SAMPLES 10
-#define TORQUE_SENSOR_RISE_FILTER_SAMPLES 30
-#define TORQUE_SENSOR_FALL_FILTER_SAMPLES 18
+#define TORQUE_SENSOR_FAST_FILTER_SAMPLES 6
+#define TORQUE_SENSOR_FAST_BLEND 0.20f
+#define TORQUE_SENSOR_ACTIVE_THRESHOLD_PERCENT 0.03f
+#define TORQUE_SENSOR_RELEASE_THRESHOLD_PERCENT 0.015f
+#define TORQUE_SENSOR_LOW_TORQUE_ANGLE_NUMERATOR 1U
+#define TORQUE_SENSOR_LOW_TORQUE_ANGLE_DENOMINATOR 3U
+#define TORQUE_SENSOR_MAX_HALF_REVOLUTION_SAMPLES 18U
+#define TORQUE_PULSE_QUEUE_SIZE 16U
+#define TORQUE_PULSE_QUEUE_MASK (TORQUE_PULSE_QUEUE_SIZE - 1U)
+#define PAS_STOP_TIMEOUT_MIN_MS 60U
+#define PAS_STOP_TIMEOUT_MAX_MS 250U
+#define PAS_STOP_TIMEOUT_PERIODS 4U
 #define PAS_SAMPLE_RATE_HZ 10000U
 #define PAS_FILTER_TIME_US 1500U
 #define PAS_FILTER_SAMPLES                                                     \
@@ -57,12 +67,33 @@ static volatile bool sample_timer_running = false;
 static volatile bool is_pedaling = false;
 static volatile float pedal_rpm = 0.0;
 static volatile float last_pedal_rpm = 0.0; // Last pedal RPM for filtering
+static volatile systime_t last_forward_transition_time = 0;
+static volatile systime_t last_forward_transition_period_ticks = 0;
 
 // Constants for torque sensor voltage thresholds
 static float TORQUE_VOLTAGE_MIN = 1.5f; // Starting voltage for torque sensor
 const float TORQUE_VOLTAGE_MAX = 2.4f;  // Maximum voltage for torque sensor
 static volatile float torque_sensor_voltage =
-    0.0f; // Current voltage from the torque sensor (used for filtering)
+    0.0f; // Fast-filtered torque sensor voltage.
+static volatile float torque_demand_percentage = 0.0f;
+static volatile bool torque_sensor_valid = false;
+static volatile bool torque_release_fast = false;
+
+/*
+ * PAS events define equal crank-angle bins. The ISR only queues a raw ADC
+ * snapshot; all filtering and floating-point work stays in thread context.
+ */
+static volatile uint16_t torque_pulse_adc_queue[TORQUE_PULSE_QUEUE_SIZE];
+static volatile uint8_t torque_pulse_queue_head = 0;
+static volatile uint8_t torque_pulse_queue_tail = 0;
+static volatile bool torque_pulse_queue_overflow = false;
+
+static float torque_angle_bins[TORQUE_SENSOR_MAX_HALF_REVOLUTION_SAMPLES];
+static uint8_t torque_angle_window_samples = 0;
+static uint8_t torque_angle_write_index = 0;
+static uint8_t torque_angle_valid_samples = 0;
+static uint8_t torque_low_pulse_count = 0;
+static float torque_angle_sum = 0.0f;
 
 #ifdef CYCLEIQ_HAS_2_WIRE_PAS
 static const int pas_lookup[] = {0, 3, 1, 2};
@@ -92,6 +123,130 @@ static uint8_t pas_update_filter_counter(uint8_t counter, bool raw_high) {
   }
 
   return counter;
+}
+
+static void torque_pulse_queue_clear(void) {
+  chSysLock();
+  torque_pulse_queue_head = 0;
+  torque_pulse_queue_tail = 0;
+  torque_pulse_queue_overflow = false;
+  chSysUnlock();
+}
+
+static void torque_pulse_queue_push(uint16_t adc_value) {
+  uint8_t head = torque_pulse_queue_head;
+  uint8_t next_head = (head + 1U) & TORQUE_PULSE_QUEUE_MASK;
+
+  if (next_head == torque_pulse_queue_tail) {
+    torque_pulse_queue_overflow = true;
+    return;
+  }
+
+  torque_pulse_adc_queue[head] = adc_value;
+  torque_pulse_queue_head = next_head;
+}
+
+static bool torque_pulse_queue_pop(uint16_t *adc_value) {
+  bool has_sample = false;
+
+  chSysLock();
+  uint8_t tail = torque_pulse_queue_tail;
+  if (tail != torque_pulse_queue_head) {
+    *adc_value = torque_pulse_adc_queue[tail];
+    torque_pulse_queue_tail = (tail + 1U) & TORQUE_PULSE_QUEUE_MASK;
+    has_sample = true;
+  }
+  chSysUnlock();
+
+  return has_sample;
+}
+
+static bool torque_pulse_queue_take_overflow(void) {
+  bool overflow;
+
+  chSysLock();
+  overflow = torque_pulse_queue_overflow;
+  torque_pulse_queue_overflow = false;
+  chSysUnlock();
+
+  return overflow;
+}
+
+static void torque_angle_history_clear(void) {
+  torque_angle_write_index = 0;
+  torque_angle_valid_samples = 0;
+  torque_low_pulse_count = 0;
+  torque_angle_sum = 0.0f;
+}
+
+static float torque_percentage_from_voltage(float voltage) {
+  float percentage =
+      utils_map(voltage, TORQUE_VOLTAGE_MIN, TORQUE_VOLTAGE_MAX, 0.0f, 1.0f);
+  utils_truncate_number(&percentage, 0.0f, 1.5f);
+  return percentage;
+}
+
+static uint8_t torque_low_pulse_limit(void) {
+  uint8_t limit = (uint8_t)((config.magnets *
+                             TORQUE_SENSOR_LOW_TORQUE_ANGLE_NUMERATOR +
+                             TORQUE_SENSOR_LOW_TORQUE_ANGLE_DENOMINATOR - 1U) /
+                            TORQUE_SENSOR_LOW_TORQUE_ANGLE_DENOMINATOR);
+  return limit > 0 ? limit : 1;
+}
+
+static void torque_record_angle_sample(uint16_t adc_value) {
+  if (torque_angle_window_samples == 0) {
+    return;
+  }
+
+  float voltage = ((float)adc_value / 4096.0f) * V_REG;
+  float sample_percentage = torque_percentage_from_voltage(voltage);
+
+  if (sample_percentage <= TORQUE_SENSOR_RELEASE_THRESHOLD_PERCENT) {
+    if (torque_low_pulse_count < torque_low_pulse_limit()) {
+      torque_low_pulse_count++;
+    }
+  } else {
+    torque_low_pulse_count = 0;
+  }
+
+  if (torque_angle_valid_samples == torque_angle_window_samples) {
+    torque_angle_sum -= torque_angle_bins[torque_angle_write_index];
+  } else {
+    torque_angle_valid_samples++;
+  }
+
+  torque_angle_bins[torque_angle_write_index] = sample_percentage;
+  torque_angle_sum += sample_percentage;
+  torque_angle_write_index++;
+  if (torque_angle_write_index >= torque_angle_window_samples) {
+    torque_angle_write_index = 0;
+  }
+}
+
+static bool pas_forward_motion_timed_out(systime_t current_time) {
+  systime_t last_transition;
+  systime_t transition_period;
+
+  chSysLock();
+  last_transition = last_forward_transition_time;
+  transition_period = last_forward_transition_period_ticks;
+  chSysUnlock();
+
+  if (last_transition == 0) {
+    return false;
+  }
+
+  systime_t timeout_ticks = transition_period * PAS_STOP_TIMEOUT_PERIODS;
+  systime_t min_timeout_ticks = MS2ST(PAS_STOP_TIMEOUT_MIN_MS);
+  systime_t max_timeout_ticks = MS2ST(PAS_STOP_TIMEOUT_MAX_MS);
+  if (timeout_ticks < min_timeout_ticks) {
+    timeout_ticks = min_timeout_ticks;
+  } else if (timeout_ticks > max_timeout_ticks) {
+    timeout_ticks = max_timeout_ticks;
+  }
+
+  return current_time - last_transition > timeout_ticks;
 }
 
 static void pas_handle_filtered_state_change(int state,
@@ -124,11 +279,27 @@ static void pas_handle_filtered_state_change(int state,
     return;
   }
 
+  systime_t previous_forward_transition = last_forward_transition_time;
+  if (previous_forward_transition != 0) {
+    systime_t transition_period = current_time - previous_forward_transition;
+    last_forward_transition_period_ticks =
+        transition_period <= max_pulse_period_ticks ? transition_period : 0;
+  }
+  last_forward_transition_time = current_time;
+
   if (correct_direction_counter < min_correct_direction)
     correct_direction_counter++;
 #else
   last_state = state;
   last_pulse_time = current_time;
+
+  systime_t previous_forward_transition = last_forward_transition_time;
+  if (previous_forward_transition != 0) {
+    systime_t transition_period = current_time - previous_forward_transition;
+    last_forward_transition_period_ticks =
+        transition_period <= max_pulse_period_ticks ? transition_period : 0;
+  }
+  last_forward_transition_time = current_time;
 
   if (correct_direction_counter < min_correct_direction)
     correct_direction_counter++;
@@ -145,6 +316,7 @@ static void pas_handle_filtered_state_change(int state,
 
       if (pulse_period > 0) {
         last_state_change = current_time;
+        torque_pulse_queue_push(ADC_Value[TS_INDEX]);
         float current_rpm = (60.0f * (float)CH_CFG_ST_FREQUENCY) /
                             ((float)config.magnets * (float)pulse_period);
 
@@ -158,6 +330,7 @@ static void pas_handle_filtered_state_change(int state,
       }
     } else {
       last_state_change = current_time;
+      torque_pulse_queue_push(ADC_Value[TS_INDEX]);
     }
   }
 }
@@ -245,6 +418,10 @@ void cycleiq_pas_init(void) {
   correct_direction_counter = 0;
   pedal_rpm = 0.0f;
   last_pedal_rpm = 0.0f;
+  last_forward_transition_time = 0;
+  last_forward_transition_period_ticks = 0;
+  torque_pulse_queue_clear();
+  torque_angle_history_clear();
 
   // Zero out the torque sensor voltage across 10 samples
   torque_sensor_voltage = 0.0f;
@@ -258,6 +435,9 @@ void cycleiq_pas_init(void) {
 
   TORQUE_VOLTAGE_MIN = torque_sensor_voltage;
   torque_sensor_voltage = TORQUE_VOLTAGE_MIN;
+  torque_demand_percentage = 0.0f;
+  torque_sensor_valid = true;
+  torque_release_fast = false;
 }
 
 void cycleiq_pas_deinit(void) {
@@ -284,7 +464,7 @@ void cycleiq_pas_configure(cycleiq_pas_config *conf) {
   }
 
 #ifdef CYCLEIQ_HAS_2_WIRE_PAS
-  min_correct_direction = config.magnets * 4 / 2;
+  min_correct_direction = config.magnets * 4 / 6;
   max_pulse_period_ms =
       1000.0 / ((config.pedal_rpm_start / 60.0) *
                 config.magnets); // Calculate the maximum pulse period based on
@@ -295,7 +475,7 @@ void cycleiq_pas_configure(cycleiq_pas_config *conf) {
                                  // pedal RPM and magnets
 #else
   min_correct_direction =
-      config.magnets / 2; // For single-wire PAS, set the minimum correct
+      config.magnets / 6; // For single-wire PAS, set the minimum correct
                           // direction events to half the magnets
   max_pulse_period_ms =
       1000.0 / ((config.pedal_rpm_start / 60.0) *
@@ -323,6 +503,16 @@ void cycleiq_pas_configure(cycleiq_pas_config *conf) {
   correct_direction_counter = 0;
   pedal_rpm = 0.0f;
   last_pedal_rpm = 0.0f;
+  last_forward_transition_time = 0;
+  last_forward_transition_period_ticks = 0;
+  torque_pulse_queue_clear();
+  torque_angle_history_clear();
+  torque_angle_window_samples = config.magnets / 2U;
+  if (torque_angle_window_samples > TORQUE_SENSOR_MAX_HALF_REVOLUTION_SAMPLES) {
+    torque_angle_window_samples = TORQUE_SENSOR_MAX_HALF_REVOLUTION_SAMPLES;
+  }
+  torque_demand_percentage = 0.0f;
+  torque_release_fast = false;
 
   pas_sample_timer_start();
 }
@@ -340,17 +530,41 @@ void cycleiq_pas_loop(void) {
 
   float ts_voltage = ADC_VOLTS(TS_INDEX); // Read the torque sensor voltage
   if (isfinite(ts_voltage)) {
-    /*
-     * This loop runs every 10 ms. A large symmetric filter makes torque assist
-     * feel disconnected and keeps assist alive long after rider torque is gone.
-     */
-    float filter_samples = ts_voltage < torque_sensor_voltage
-                               ? TORQUE_SENSOR_FALL_FILTER_SAMPLES
-                               : TORQUE_SENSOR_RISE_FILTER_SAMPLES;
     UTILS_LP_MOVING_AVG_APPROX(torque_sensor_voltage, ts_voltage,
-                               filter_samples);
+                               TORQUE_SENSOR_FAST_FILTER_SAMPLES);
+    torque_sensor_valid = true;
   } else {
     torque_sensor_voltage = 0.0f;
+    torque_sensor_valid = false;
+  }
+
+  if (torque_pulse_queue_take_overflow()) {
+    torque_angle_history_clear();
+  }
+
+  uint16_t pulse_adc_value;
+  while (torque_pulse_queue_pop(&pulse_adc_value)) {
+    torque_record_angle_sample(pulse_adc_value);
+  }
+
+  float fast_percentage = torque_percentage_from_voltage(torque_sensor_voltage);
+  float angle_percentage = fast_percentage;
+  if (torque_angle_valid_samples > 0) {
+    angle_percentage = torque_angle_sum / torque_angle_valid_samples;
+  }
+
+  float demand_percentage =
+      angle_percentage + TORQUE_SENSOR_FAST_BLEND *
+                             (fast_percentage - angle_percentage);
+  utils_truncate_number(&demand_percentage, 0.0f, 1.5f);
+  torque_demand_percentage = demand_percentage;
+
+  torque_release_fast = !torque_sensor_valid ||
+                        pas_forward_motion_timed_out(current_time) ||
+                        torque_low_pulse_count >= torque_low_pulse_limit();
+  if (torque_release_fast) {
+    torque_demand_percentage = 0.0f;
+    torque_angle_history_clear();
   }
 
   if (last_state_change == 0 ||
@@ -407,16 +621,23 @@ float cycleiq_ts_get_voltage(void) {
 bool cycleiq_ts_is_active(void) {
   bool res;
   chSysLock();
-  res = torque_sensor_voltage >= TORQUE_VOLTAGE_MIN;
+  res = !torque_release_fast &&
+        torque_demand_percentage >= TORQUE_SENSOR_ACTIVE_THRESHOLD_PERCENT;
   chSysUnlock();
   return res;
 }
 float cycleiq_ts_get_percentage(void) {
   float res;
   chSysLock();
-  res = utils_map(torque_sensor_voltage, TORQUE_VOLTAGE_MIN, TORQUE_VOLTAGE_MAX,
-                  0.0f, 1.0f);
-  utils_truncate_number(&res, 0.0f, 1.5f); // Max 150%
+  res = torque_demand_percentage;
+  chSysUnlock();
+  return res;
+}
+
+bool cycleiq_ts_should_release_fast(void) {
+  bool res;
+  chSysLock();
+  res = torque_release_fast;
   chSysUnlock();
   return res;
 }

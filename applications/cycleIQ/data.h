@@ -15,9 +15,6 @@ typedef struct CYCLEIQ_CONFIG
 
 typedef struct CYCLEIQ_DATA
 {
-  // CycleIQ internal data
-  cycleiq_screen_t screen;
-
   // Battery data
   uint8_t battery_level_pct;
   float battery_voltage_v;
@@ -29,7 +26,7 @@ typedef struct CYCLEIQ_DATA
   int8_t motor_temperature_c;
   int8_t controller_temperature_c;
   float motor_current_a;
-  uint16_t motor_power_w;
+  int16_t motor_power_w;
   float motor_rpm;
 
   // Ride configuration
@@ -51,15 +48,6 @@ void cycleiq_data_init(void);
 void cycleiq_data_reset(void);
 void cycleiq_config_load(void);
 bool cycleiq_config_save(void);
-void cycleiq_config_discard_staged(void);
-cycleiq_config_status_t cycleiq_config_get_field(cycleiq_config_field_t field,
-                                                 uint16_t *value);
-void cycleiq_config_get_snapshot(cycleiq_config_snapshot_t *snapshot);
-cycleiq_config_status_t cycleiq_config_stage_field(cycleiq_config_field_t field,
-                                                   uint16_t value);
-cycleiq_config_status_t
-cycleiq_config_stage_snapshot(const cycleiq_config_snapshot_t *snapshot);
-cycleiq_config_status_t cycleiq_config_commit(void);
 
 void cycleiq_data_loop(void);
 void cycleiq_data_motor_sensor_update(float rpm, int8_t temperature_c);
@@ -67,7 +55,6 @@ void cycleiq_data_motor_sensor_update(float rpm, int8_t temperature_c);
 bool cycleiq_data_set_gear(uint8_t gear);
 bool cycleiq_data_set_support_mode(cycleiq_support_mode_t mode);
 bool cycleiq_data_set_ride_mode(cycleiq_ride_mode_t mode);
-bool cycleiq_data_set_screen(cycleiq_screen_t screen);
 void cycleiq_data_set_motor_enabled(bool enabled);
 void cycleiq_data_apply_ride_mode_limits(void);
 

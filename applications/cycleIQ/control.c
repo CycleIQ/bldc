@@ -8,7 +8,7 @@
 
 #include <math.h>
 
-#define CYCLEIQ_BATTERY_LIMIT_START_DUTY 0.33f
+#define CYCLEIQ_BATTERY_LIMIT_START_DUTY 0.25f
 #define CYCLEIQ_MIN_DUTY_FOR_CURRENT_ESTIMATE 0.02f
 #define CYCLEIQ_SERVICE_PERIOD_S 0.01f
 #define CYCLEIQ_SPEED_TAPER_WINDOW_KPH 2.0f
@@ -16,12 +16,12 @@
 #define CYCLEIQ_PHASE_RAMP_DOWN_PAS_A_PER_S 40.0f
 #define CYCLEIQ_PHASE_RELEASE_PAS_A_PER_S 80.0f
 #define CYCLEIQ_PHASE_RAMP_UP_TORQUE_A_PER_S 150.0f
-#define CYCLEIQ_PHASE_RAMP_DOWN_TORQUE_A_PER_S 150.0f
+#define CYCLEIQ_PHASE_RAMP_DOWN_TORQUE_A_PER_S 60.0f
 #define CYCLEIQ_PHASE_RELEASE_TORQUE_A_PER_S 300.0f
 #define CYCLEIQ_BATTERY_OVERCURRENT_PHASE_GAIN 2.0f
-#define CYCLEIQ_WALK_BATTERY_CURRENT_A 2.0f
-#define CYCLEIQ_WALK_FULL_SPEED_KPH 5.0f
-#define CYCLEIQ_WALK_MAX_SPEED_KPH 6.0f
+#define CYCLEIQ_WALK_BATTERY_CURRENT_A 3.0f
+#define CYCLEIQ_WALK_FULL_SPEED_KPH 6.0f
+#define CYCLEIQ_WALK_MAX_SPEED_KPH 8.0f
 
 typedef struct {
   float battery_current_limit_a;
@@ -146,16 +146,15 @@ static float support_factor(void) {
   }
 
   switch (cycleiq_data.support_mode) {
-  case CYCLEIQ_MODE_PAS:
+  case CYCLEIQ_SUPPORT_MODE_PAS:
     return cycleiq_pas_is_pedaling() ? 1.0f : 0.0f;
 
-  case CYCLEIQ_MODE_TORQUE:
-    if (!cycleiq_ts_is_active()) {
+  case CYCLEIQ_SUPPORT_MODE_TORQUE:
+    if (cycleiq_ts_should_release_fast()) {
       return 0.0f;
     }
     return cycleiq_ts_get_percentage();
 
-  case CYCLEIQ_MODE_HYBRID:
   default:
     return 0.0f;
   }
@@ -180,7 +179,7 @@ static float ramp_up_rate_for_mode(bool walk_active) {
     return CYCLEIQ_PHASE_RAMP_UP_PAS_A_PER_S;
   }
 
-  if (cycleiq_data.support_mode == CYCLEIQ_MODE_TORQUE) {
+  if (cycleiq_data.support_mode == CYCLEIQ_SUPPORT_MODE_TORQUE) {
     return CYCLEIQ_PHASE_RAMP_UP_TORQUE_A_PER_S;
   }
 
@@ -193,7 +192,7 @@ static float ramp_down_rate_for_mode(bool release_fast, bool walk_active) {
                         : CYCLEIQ_PHASE_RAMP_DOWN_PAS_A_PER_S;
   }
 
-  if (cycleiq_data.support_mode == CYCLEIQ_MODE_TORQUE) {
+  if (cycleiq_data.support_mode == CYCLEIQ_SUPPORT_MODE_TORQUE) {
     return release_fast ? CYCLEIQ_PHASE_RELEASE_TORQUE_A_PER_S
                         : CYCLEIQ_PHASE_RAMP_DOWN_TORQUE_A_PER_S;
   }
@@ -241,6 +240,8 @@ void cycleiq_control_loop(void) {
 
   cycleiq_gear_limits_t gear_limits;
   float demand_factor;
+  float torque_support_factor = 0.0f;
+  float torque_speed_taper_factor = 0.0f;
   if (walk_active) {
     gear_limits = gear_limits_for_current(CYCLEIQ_WALK_BATTERY_CURRENT_A);
     demand_factor = cycleiq_data.motor_enabled
@@ -249,7 +250,9 @@ void cycleiq_control_loop(void) {
   } else {
     gear_limits =
         gear_limits_for_gear(cycleiq_data.current_gear, cycleiq_data.ride_mode);
-    demand_factor = support_factor() * speed_taper_factor();
+    torque_support_factor = support_factor();
+    torque_speed_taper_factor = speed_taper_factor();
+    demand_factor = torque_support_factor * torque_speed_taper_factor;
   }
   utils_truncate_number(&demand_factor, 0.0f, 1.0f);
 
@@ -257,6 +260,15 @@ void cycleiq_control_loop(void) {
       gear_limits.battery_current_limit_a * demand_factor;
   float target_phase_current_a = gear_limits.phase_current_limit_a * demand_factor;
   bool release_fast = target_battery_current_a <= 0.0f;
+  if (!walk_active && cycleiq_data.support_mode == CYCLEIQ_SUPPORT_MODE_TORQUE &&
+      cycleiq_data.motor_enabled && !cycleiq_ts_should_release_fast() &&
+      torque_support_factor <= 0.0f && torque_speed_taper_factor > 0.0f) {
+    /*
+     * A momentary zero torque request is part of normal pedaling. Fast release
+     * is reserved for a confirmed stop, invalid sensor, or other safety path.
+     */
+    release_fast = false;
+  }
 
   if (target_battery_current_a > 0.0f) {
     float duty = fabsf(mc_interface_get_duty_cycle_now());

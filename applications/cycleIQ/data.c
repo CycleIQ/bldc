@@ -11,8 +11,6 @@
 
 #include "utils_math.h"
 
-#include <stddef.h>
-
 #define MAX_GEAR 3
 #ifdef CYCLEIQ_HIGH_POWER
 #define MAX_GEAR_MOUNTAIN 6 // Maximum gear for high power mode
@@ -24,16 +22,6 @@
 #define CYCLEIQ_CONFIG_EEPROM_VERSION_ADDR 121
 #define CYCLEIQ_CONFIG_MAGIC 0x43495131u
 #define CYCLEIQ_CONFIG_VERSION 1u
-
-typedef struct {
-  cycleiq_config_field_t field;
-  size_t config_offset;
-  size_t snapshot_offset;
-  float scale;
-  float min_value;
-  float max_value;
-  int eeprom_addr;
-} cycleiq_config_descriptor_t;
 
 static float session_watt_hours_used_start;
 static float session_watt_hours_charged_start;
@@ -49,43 +37,7 @@ cycleiq_config_t cycleiq_config = {
     .wheel_diameter_m = 0.66f,
 };
 
-static cycleiq_config_t staged_config;
-
-static const cycleiq_config_descriptor_t config_descriptors[] = {
-    {
-        .field = CYCLEIQ_CONFIG_FIELD_MAX_SPEED_KPH,
-        .config_offset = offsetof(cycleiq_config_t, max_speed_kph),
-        .snapshot_offset = offsetof(cycleiq_config_snapshot_t, max_speed_ckph),
-        .scale = 100.0f,
-        .min_value = 5.0f,
-        .max_value = 45.0f,
-        .eeprom_addr = 122,
-    },
-    {
-        .field = CYCLEIQ_CONFIG_FIELD_BATTERY_RESISTANCE_MOHM,
-        .config_offset =
-            offsetof(cycleiq_config_t, battery_internal_resistance_ohm),
-        .snapshot_offset =
-            offsetof(cycleiq_config_snapshot_t, battery_resistance_mohm),
-        .scale = 1000.0f,
-        .min_value = 0.0f,
-        .max_value = 0.5f,
-        .eeprom_addr = 123,
-    },
-    {
-        .field = CYCLEIQ_CONFIG_FIELD_WHEEL_DIAMETER_MM,
-        .config_offset = offsetof(cycleiq_config_t, wheel_diameter_m),
-        .snapshot_offset =
-            offsetof(cycleiq_config_snapshot_t, wheel_diameter_mm),
-        .scale = 1000.0f,
-        .min_value = 0.3f,
-        .max_value = 1.0f,
-        .eeprom_addr = 124,
-    },
-};
-
 cycleiq_data_t cycleiq_data = {
-    .screen = CYCLEIQ_SCREEN_MAIN,
     .battery_level_pct = 100,
     .battery_voltage_v = 0.0f,
     .battery_current_a = 0.0f,
@@ -98,7 +50,7 @@ cycleiq_data_t cycleiq_data = {
     .motor_power_w = 0,
     .current_gear = 3, // Default gear
     .max_gear = MAX_GEAR,
-    .support_mode = CYCLEIQ_MODE_PAS,      // Default support mode
+    .support_mode = CYCLEIQ_SUPPORT_MODE_PAS,
     .ride_mode = CYCLEIQ_RIDE_MODE_NORMAL, // Default ride mode
     .motor_enabled = true,
     .speed_mps = 0.0f,
@@ -121,119 +73,14 @@ static float non_negative_delta(float current, float baseline) {
   return delta;
 }
 
-static const cycleiq_config_descriptor_t *
-config_descriptor_for_field(cycleiq_config_field_t field) {
-  for (unsigned int i = 0;
-       i < sizeof(config_descriptors) / sizeof(config_descriptors[0]); i++) {
-    if (config_descriptors[i].field == field) {
-      return &config_descriptors[i];
-    }
-  }
-
-  return NULL;
-}
-
-static float *config_value_ptr(cycleiq_config_t *config,
-                               const cycleiq_config_descriptor_t *descriptor) {
-  return (float *)((uint8_t *)config + descriptor->config_offset);
-}
-
-static uint16_t *snapshot_value_ptr(
-    cycleiq_config_snapshot_t *snapshot,
-    const cycleiq_config_descriptor_t *descriptor) {
-  return (uint16_t *)((uint8_t *)snapshot + descriptor->snapshot_offset);
-}
-
-static bool config_value_valid(const cycleiq_config_descriptor_t *descriptor,
-                               float value) {
-  return isfinite(value) && value >= descriptor->min_value &&
-         value <= descriptor->max_value;
-}
-
-static bool config_decode_value(const cycleiq_config_descriptor_t *descriptor,
-                                uint16_t encoded, float *value) {
-  float decoded = (float)encoded / descriptor->scale;
-  if (!config_value_valid(descriptor, decoded)) {
-    return false;
-  }
-
-  *value = decoded;
-  return true;
-}
-
-static uint16_t config_encode_value(
-    const cycleiq_config_descriptor_t *descriptor, float value) {
-  if (!config_value_valid(descriptor, value)) {
-    value = descriptor->min_value;
-  }
-
-  float encoded = value * descriptor->scale + 0.5f;
-  utils_truncate_number(&encoded, 0.0f, 65535.0f);
-  return (uint16_t)encoded;
-}
-
 static bool config_validate_all(const cycleiq_config_t *config) {
-  for (unsigned int i = 0;
-       i < sizeof(config_descriptors) / sizeof(config_descriptors[0]); i++) {
-    const cycleiq_config_descriptor_t *descriptor = &config_descriptors[i];
-    if (!config_value_valid(descriptor,
-                            *config_value_ptr((cycleiq_config_t *)config,
-                                              descriptor))) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-static void config_snapshot_from_config(const cycleiq_config_t *config,
-                                        cycleiq_config_snapshot_t *snapshot) {
-  for (unsigned int i = 0;
-       i < sizeof(config_descriptors) / sizeof(config_descriptors[0]); i++) {
-    const cycleiq_config_descriptor_t *descriptor = &config_descriptors[i];
-    *snapshot_value_ptr(snapshot, descriptor) =
-        config_encode_value(descriptor,
-                            *config_value_ptr((cycleiq_config_t *)config,
-                                              descriptor));
-  }
-}
-
-static cycleiq_config_status_t
-config_apply_field(cycleiq_config_t *config, cycleiq_config_field_t field,
-                   uint16_t encoded) {
-  const cycleiq_config_descriptor_t *descriptor =
-      config_descriptor_for_field(field);
-  if (descriptor == NULL) {
-    return CYCLEIQ_CONFIG_STATUS_UNKNOWN_FIELD;
-  }
-
-  float value = 0.0f;
-  if (!config_decode_value(descriptor, encoded, &value)) {
-    return CYCLEIQ_CONFIG_STATUS_INVALID_VALUE;
-  }
-
-  *config_value_ptr(config, descriptor) = value;
-  return CYCLEIQ_CONFIG_STATUS_OK;
-}
-
-static cycleiq_config_status_t
-config_apply_snapshot(cycleiq_config_t *config,
-                      const cycleiq_config_snapshot_t *snapshot) {
-  cycleiq_config_t candidate = *config;
-
-  for (unsigned int i = 0;
-       i < sizeof(config_descriptors) / sizeof(config_descriptors[0]); i++) {
-    const cycleiq_config_descriptor_t *descriptor = &config_descriptors[i];
-    cycleiq_config_status_t status = config_apply_field(
-        &candidate, descriptor->field,
-        *snapshot_value_ptr((cycleiq_config_snapshot_t *)snapshot, descriptor));
-    if (status != CYCLEIQ_CONFIG_STATUS_OK) {
-      return status;
-    }
-  }
-
-  *config = candidate;
-  return CYCLEIQ_CONFIG_STATUS_OK;
+  return config != NULL && isfinite(config->max_speed_kph) &&
+         config->max_speed_kph >= 5.0f && config->max_speed_kph <= 45.0f &&
+         isfinite(config->battery_internal_resistance_ohm) &&
+         config->battery_internal_resistance_ohm >= 0.0f &&
+         config->battery_internal_resistance_ohm <= 0.5f &&
+         isfinite(config->wheel_diameter_m) && config->wheel_diameter_m >= 0.3f &&
+         config->wheel_diameter_m <= 1.0f;
 }
 
 static void capture_session_energy_baselines(void) {
@@ -266,7 +113,6 @@ void cycleiq_data_apply_ride_mode_limits(void) {
 
 void cycleiq_data_init(void)
 {
-  staged_config = cycleiq_config;
   cycleiq_data_reset();
   capture_session_energy_baselines();
   session_start_time = chVTGetSystemTimeX();
@@ -278,7 +124,6 @@ void cycleiq_data_init(void)
 
 void cycleiq_data_reset(void)
 {
-  cycleiq_data.screen = CYCLEIQ_SCREEN_MAIN; // Reset to default screen
   cycleiq_data.battery_level_pct = 0;
   cycleiq_data.battery_voltage_v = 0.0f;
   cycleiq_data.battery_current_a = 0.0f;
@@ -290,7 +135,7 @@ void cycleiq_data_reset(void)
   cycleiq_data.motor_power_w = 0;
   cycleiq_data.motor_rpm = 0.0f;
   cycleiq_data.current_gear = 0;                     // Reset to default gear
-  cycleiq_data.support_mode = CYCLEIQ_MODE_PAS;      // Reset to default support mode
+  cycleiq_data.support_mode = CYCLEIQ_SUPPORT_MODE_PAS;
   cycleiq_data.ride_mode = CYCLEIQ_RIDE_MODE_NORMAL; // Reset to default ride mode
   cycleiq_data.motor_enabled = true;
   cycleiq_data.speed_mps = 0.0f;
@@ -313,47 +158,51 @@ void cycleiq_config_load(void)
           &version, CYCLEIQ_CONFIG_EEPROM_VERSION_ADDR) ||
       magic.as_u32 != CYCLEIQ_CONFIG_MAGIC ||
       version.as_u32 != CYCLEIQ_CONFIG_VERSION) {
-    staged_config = cycleiq_config;
     return;
   }
 
-  for (unsigned int i = 0;
-       i < sizeof(config_descriptors) / sizeof(config_descriptors[0]); i++) {
-    const cycleiq_config_descriptor_t *descriptor = &config_descriptors[i];
-    eeprom_var value;
-    float decoded = 0.0f;
-    if (!conf_general_read_eeprom_var_custom(&value, descriptor->eeprom_addr) ||
-        !config_decode_value(descriptor, (uint16_t)value.as_u32, &decoded)) {
-      staged_config = cycleiq_config;
-      return;
-    }
-
-    *config_value_ptr(&loaded, descriptor) = decoded;
+  eeprom_var value;
+  if (!conf_general_read_eeprom_var_custom(&value, 122)) {
+    return;
   }
+  loaded.max_speed_kph = (float)value.as_u32 / 100.0f;
+  if (!conf_general_read_eeprom_var_custom(&value, 123)) {
+    return;
+  }
+  loaded.battery_internal_resistance_ohm = (float)value.as_u32 / 1000.0f;
+  if (!conf_general_read_eeprom_var_custom(&value, 124)) {
+    return;
+  }
+  loaded.wheel_diameter_m = (float)value.as_u32 / 1000.0f;
 
   if (!config_validate_all(&loaded)) {
-    staged_config = cycleiq_config;
     return;
   }
 
   cycleiq_config = loaded;
-  staged_config = cycleiq_config;
 }
 
 bool cycleiq_config_save(void)
 {
-  cycleiq_config_t saved_config = cycleiq_config;
   eeprom_var value;
 
-  for (unsigned int i = 0;
-       i < sizeof(config_descriptors) / sizeof(config_descriptors[0]); i++) {
-    const cycleiq_config_descriptor_t *descriptor = &config_descriptors[i];
-    value.as_u32 =
-        config_encode_value(descriptor, *config_value_ptr(&saved_config,
-                                                          descriptor));
-    if (!conf_general_store_eeprom_var_custom(&value, descriptor->eeprom_addr)) {
-      return false;
-    }
+  if (!config_validate_all(&cycleiq_config)) {
+    return false;
+  }
+
+  value.as_u32 = (uint32_t)(cycleiq_config.max_speed_kph * 100.0f + 0.5f);
+  if (!conf_general_store_eeprom_var_custom(&value, 122)) {
+    return false;
+  }
+  value.as_u32 =
+      (uint32_t)(cycleiq_config.battery_internal_resistance_ohm * 1000.0f +
+                 0.5f);
+  if (!conf_general_store_eeprom_var_custom(&value, 123)) {
+    return false;
+  }
+  value.as_u32 = (uint32_t)(cycleiq_config.wheel_diameter_m * 1000.0f + 0.5f);
+  if (!conf_general_store_eeprom_var_custom(&value, 124)) {
+    return false;
   }
 
   value.as_u32 = CYCLEIQ_CONFIG_VERSION;
@@ -369,65 +218,6 @@ bool cycleiq_config_save(void)
   }
 
   return true;
-}
-
-void cycleiq_config_discard_staged(void) {
-  staged_config = cycleiq_config;
-}
-
-cycleiq_config_status_t cycleiq_config_get_field(cycleiq_config_field_t field,
-                                                 uint16_t *value) {
-  if (value == NULL) {
-    return CYCLEIQ_CONFIG_STATUS_MALFORMED;
-  }
-
-  const cycleiq_config_descriptor_t *descriptor =
-      config_descriptor_for_field(field);
-  if (descriptor == NULL) {
-    return CYCLEIQ_CONFIG_STATUS_UNKNOWN_FIELD;
-  }
-
-  *value =
-      config_encode_value(descriptor, *config_value_ptr(&cycleiq_config,
-                                                        descriptor));
-  return CYCLEIQ_CONFIG_STATUS_OK;
-}
-
-void cycleiq_config_get_snapshot(cycleiq_config_snapshot_t *snapshot) {
-  if (snapshot == NULL) {
-    return;
-  }
-
-  config_snapshot_from_config(&cycleiq_config, snapshot);
-}
-
-cycleiq_config_status_t cycleiq_config_stage_field(cycleiq_config_field_t field,
-                                                   uint16_t value) {
-  return config_apply_field(&staged_config, field, value);
-}
-
-cycleiq_config_status_t
-cycleiq_config_stage_snapshot(const cycleiq_config_snapshot_t *snapshot) {
-  if (snapshot == NULL) {
-    return CYCLEIQ_CONFIG_STATUS_MALFORMED;
-  }
-
-  return config_apply_snapshot(&staged_config, snapshot);
-}
-
-cycleiq_config_status_t cycleiq_config_commit(void) {
-  if (!config_validate_all(&staged_config)) {
-    return CYCLEIQ_CONFIG_STATUS_INVALID_VALUE;
-  }
-
-  cycleiq_config_t active_config = cycleiq_config;
-  cycleiq_config = staged_config;
-  if (!cycleiq_config_save()) {
-    cycleiq_config = active_config;
-    return CYCLEIQ_CONFIG_STATUS_PERSIST_FAILED;
-  }
-
-  return CYCLEIQ_CONFIG_STATUS_OK;
 }
 
 void cycleiq_data_loop(void)
@@ -454,8 +244,8 @@ void cycleiq_data_loop(void)
 
   float motor_power = cycleiq_data.battery_current_a *
                       cycleiq_data.battery_voltage_v;
-  utils_truncate_number(&motor_power, 0.0f, 65535.0f);
-  cycleiq_data.motor_power_w = (uint16_t)motor_power;
+  utils_truncate_number(&motor_power, -32768.0f, 32767.0f);
+  cycleiq_data.motor_power_w = (int16_t)motor_power;
 
   float watt_hours_used = non_negative_delta(mc_interface_get_watt_hours(false),
                                              session_watt_hours_used_start);
@@ -532,7 +322,8 @@ bool cycleiq_data_set_gear(uint8_t gear) {
 }
 
 bool cycleiq_data_set_support_mode(cycleiq_support_mode_t mode) {
-  if (mode > CYCLEIQ_MODE_HYBRID) {
+  if (mode != CYCLEIQ_SUPPORT_MODE_PAS &&
+      mode != CYCLEIQ_SUPPORT_MODE_TORQUE) {
     return false;
   }
 
@@ -547,15 +338,6 @@ bool cycleiq_data_set_ride_mode(cycleiq_ride_mode_t mode) {
 
   cycleiq_data.ride_mode = mode;
   cycleiq_data_apply_ride_mode_limits();
-  return true;
-}
-
-bool cycleiq_data_set_screen(cycleiq_screen_t screen) {
-  if (screen > CYCLEIQ_SCREEN_GRAPH) {
-    return false;
-  }
-
-  cycleiq_data.screen = screen;
   return true;
 }
 

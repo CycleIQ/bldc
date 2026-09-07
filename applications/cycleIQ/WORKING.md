@@ -49,22 +49,12 @@ Default configuration:
 - battery internal resistance: 0.05 ohm
 - wheel diameter: 0.66 m
 
-Configurable fields are descriptor-driven in `data.c`. The descriptor table
-defines the wire field ID, encoded scale, validation range, active config
-offset, snapshot offset, and custom EEPROM address for each field. Startup loads
-persisted config from the custom EEPROM area only when the stored magic/version
-match and every stored field validates; otherwise firmware defaults remain
-active.
-
-Display config writes are staged. Single-field writes and full-snapshot writes
-update the staged copy only, and snapshot writes validate every field before
-applying any of them. `CYCLEIQ_CONFIG_OP_COMMIT` copies the staged config into
-the active config and persists it once. `CYCLEIQ_CONFIG_OP_DISCARD` resets staged
-config from active config.
+The display protocol does not configure the ESC. Firmware validates and loads
+the three local values from custom EEPROM only when its magic/version and every
+stored value are valid; otherwise these defaults remain active.
 
 Data initialization resets transient values and starts in:
 
-- main display screen
 - PAS support mode
 - normal ride mode
 - motor enabled
@@ -85,7 +75,8 @@ Currently refreshed from VESC APIs:
 - input battery current from `mc_interface_get_tot_current_in_filtered()`
 - motor current from `mc_interface_get_tot_current_directional_filtered()`
 - controller temperature from `mc_interface_temp_fet_filtered()`
-- motor power as battery current times battery voltage, clamped to `uint16_t`
+- motor power as signed battery current times battery voltage, clamped to the
+  protocol's signed-watt range
 - watt-hours and amp-hours as session-relative net consumed deltas from the
   VESC Ah/Wh counters, without resetting the shared VESC counters
 
@@ -100,8 +91,8 @@ Trip distance is integrated from the cycleIQ wheel-hall speed over elapsed
 system time. Trip time is session elapsed time, and average speed is trip
 distance divided by elapsed trip time, including stopped time.
 
-The app validates incoming setters for gear, support mode, ride mode, and
-screen before changing global state.
+The app validates incoming gear, support-mode, ride-mode, and walk commands
+before changing state.
 
 ## Assist Control
 
@@ -110,7 +101,7 @@ Each gear has a battery-current budget and a derived low-speed phase-current
 ceiling. The phase-current ceiling is calculated as:
 
 ```text
-phase_current_limit_a = battery_current_limit_a / 0.33
+phase_current_limit_a = battery_current_limit_a / 0.25
 ```
 
 This makes the gear feel phase-current limited below approximately 33% duty, and
@@ -224,9 +215,16 @@ Torque sensor handling:
   10 ms gaps.
 - The measured zero point is multiplied by 1.03 and used as the minimum torque
   voltage.
-- Runtime torque voltage is low-pass filtered each 10 ms service loop with a
-  short asymmetric filter: 30 samples while rising, 18 samples while falling.
-- Torque sensor active means voltage is at or above the calibrated minimum.
+- Runtime torque voltage has a short fixed low-pass filter for ADC noise.
+- Every accepted forward PAS pulse snapshots the current torque ADC reading.
+  These equal-angle samples feed a rolling half-revolution average (9 samples
+  on 18-magnet two-wire hardware; 18 on 36-magnet single-wire hardware).
+- The assist demand is the angular average plus 20% of the short-filtered
+  torque residual, retaining initial response while rejecting pedal-stroke
+  ripple.
+- A fast release bypasses the angular average for invalid torque data, a stale
+  forward PAS transition, or torque remaining near zero across one third of a
+  crank revolution. A short torque valley by itself does not fast-release.
 - Torque percentage maps calibrated minimum to 0.0 and 2.4 V to 1.0, then
   clamps to a maximum of 1.5.
 
@@ -256,71 +254,46 @@ last pulse and previous temperature sample. Motor temperature is computed with
 `comm.c` registers an extended-ID CAN receive callback with
 `comm_can_set_eid_rx_callback()`.
 
-The shared protocol uses:
-
-- display node ID: `PEAK_CAN_ID` / `0x6A`
-- ESC node ID: `CYCLEIQ_CAN_ID` / `0x6B`
-- extended CAN ID high byte as destination node
-- extended CAN ID low byte as command or telemetry type
-- big-endian multi-byte payload fields
-
-The ESC accepts only frames addressed to `CYCLEIQ_CAN_ID`.
+The shared protocol uses the display node ID `CYCLEIQ_DISPLAY_CAN_ID` (`0x6A`)
+and ESC node ID `CYCLEIQ_ESC_CAN_ID` (`0x6B`). The extended CAN ID has the
+destination in bits 8..15 and packet type in bits 0..7. Multi-byte payloads are
+big-endian. The ESC accepts only frames addressed to `CYCLEIQ_ESC_CAN_ID`.
 
 Implemented commands:
 
 | Command | Behavior |
 | --- | --- |
-| `CYCLEIQ_POWER_OFF` | disables motor output and immediately commands 0 A |
-| `CYCLEIQ_POWER_ON` | enables motor output |
-| `CYCLEIQ_COMM_GEAR_SET` | reads one byte and sets gear if valid |
-| `CYCLEIQ_COMM_MODE_SET` | reads one byte and sets PAS/torque/hybrid mode if valid |
-| `CYCLEIQ_COMM_RIDE_MODE_SET` | reads one byte and sets normal/mountain mode if valid |
-| `CYCLEIQ_COMM_SCREEN_SET` | reads one byte and sets display screen state if valid |
-| `CYCLEIQ_COMM_WALK_SET` | reads an exact one-byte boolean; ON activates/refreshes Walk Mode and OFF clears it |
-| `CYCLEIQ_COMM_CONFIG_GET` | replies with a config snapshot or a single config field |
-| `CYCLEIQ_COMM_CONFIG_SET` | stages config field/snapshot updates, commits staged config, or discards staged config |
-| `CYCLEIQ_COMM_PROTOCOL_VERSION_GET` | replies with protocol and SDK versions |
+| `CYCLEIQ_COMMAND_GEAR_UP` | increments gear by one, up to the ride-mode limit |
+| `CYCLEIQ_COMMAND_GEAR_DOWN` | decrements gear by one, down to zero |
+| `CYCLEIQ_COMMAND_SET_SUPPORT_MODE` | selects validated PAS or torque support |
+| `CYCLEIQ_COMMAND_SET_RIDE_MODE` | selects validated normal or mountain mode |
+| `CYCLEIQ_COMMAND_SET_WALK` | exact one-byte boolean; ON activates/refreshes Walk Mode and OFF clears it |
+| `CYCLEIQ_COMMAND_SYNC_REQUEST` | immediately publishes every telemetry packet |
 
 Unknown commands are ignored after frame validation.
 
-Config set commands reply with config ACK/error telemetry. Config get commands
-reply with config field/snapshot telemetry, or config ACK/error telemetry when a
-request is malformed or references an unknown field.
-
 ## CAN Telemetry To Display
 
-Telemetry is sent to `PEAK_CAN_ID`.
+Telemetry is sent to `CYCLEIQ_DISPLAY_CAN_ID`.
 
 Scheduled telemetry:
 
 | Packet | Period | Current source |
 | --- | ---: | --- |
-| live status | 100 ms | speed and motor power |
-| battery status | 500 ms | battery percent, voltage, battery current |
-| motor status | 250 ms | motor temp, controller temp, motor current, motor RPM |
-| controller state | 1000 ms, or immediately on change | gear, support mode, ride mode |
-| walk state | 1000 ms, or immediately on change | confirmed Walk Mode active state |
-| battery energy | 1000 ms | watt-hours and amp-hours |
-| trip primary | 1000 ms | trip distance and trip time |
-| trip secondary | 1000 ms | average speed and range |
-| config field | on request | one encoded config field |
-| config snapshot | on request | max speed, battery resistance, wheel diameter |
-| config ACK/error | on config set/error | command, status, detail |
+| `CYCLEIQ_TELEMETRY_LIVE` | 100 ms | speed in centi-km/h and signed watts |
+| `CYCLEIQ_TELEMETRY_THERMALS` | 250 ms | motor and controller temperature in °C |
+| `CYCLEIQ_TELEMETRY_BATTERY` | 500 ms | battery percentage and centivolts |
+| `CYCLEIQ_TELEMETRY_STATE` | 1000 ms, or immediately on change | applied gear, modes, and confirmed Walk Mode state |
 
-Initial transmit offsets are staggered so the first service loop does not emit
-all slower packets at once.
+Initial periodic transmissions are staggered; a sync request bypasses those
+offsets and emits state, live, thermals, and battery immediately.
 
 The display implements Walk Mode as hold-to-run: send ON immediately when the
 button is pressed, repeat ON every 250 ms while held, and send OFF immediately
 on release or input cancellation. The 1000 ms ESC timeout remains the fail-safe
 for a lost display, reset, or interrupted CAN connection. The display should use
-walk-state telemetry, rather than its local button state, for its active-mode
+the state telemetry, rather than its local button state, for its active-mode
 indicator.
-
-Current telemetry limitations:
-
-- range is initialized but not estimated.
-- controller state does not include `motor_enabled`.
 
 ## Hardware Variants
 
@@ -342,9 +315,8 @@ motor NTC input.
 These symbols or data paths exist but are not fully functional yet:
 
 - VESC app configuration is ignored.
-- Hybrid support mode outputs 0 A.
 - Range is not estimated.
-- Non-config incoming commands are accepted without explicit acknowledgements or
-  error telemetry.
+- Commands do not have an acknowledgement packet; the state telemetry confirms
+  applied gear, modes, and Walk Mode.
 - Battery-current limiting is implemented as conservative phase-current trim,
   not a tuned PID controller.

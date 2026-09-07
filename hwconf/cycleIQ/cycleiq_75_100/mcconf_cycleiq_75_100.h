@@ -895,7 +895,7 @@
 
 // Motor Poles
 #ifndef MCCONF_SI_MOTOR_POLES
-#define MCCONF_SI_MOTOR_POLES 96
+#define MCCONF_SI_MOTOR_POLES 118
 #endif
 
 // Gear Ratio
