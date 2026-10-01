@@ -91,8 +91,8 @@ Trip distance is integrated from the cycleIQ wheel-hall speed over elapsed
 system time. Trip time is session elapsed time, and average speed is trip
 distance divided by elapsed trip time, including stopped time.
 
-The app validates incoming gear, support-mode, ride-mode, and walk commands
-before changing state.
+The app validates incoming gear, support-mode, ride-mode, walk, and controller
+enable commands before changing state.
 
 ## Assist Control
 
@@ -225,8 +225,9 @@ Torque sensor handling:
 - A fast release bypasses the angular average for invalid torque data, a stale
   forward PAS transition, or torque remaining near zero across one third of a
   crank revolution. A short torque valley by itself does not fast-release.
-- Torque percentage maps calibrated minimum to 0.0 and 2.4 V to 1.0, then
-  clamps to a maximum of 1.5.
+- Torque percentage maps the calibrated minimum to 0.0 and 2.1 V to 1.0, then
+  clamps the internal demand to a maximum of 1.5 before control clamps it to
+  the selected gear's current limit.
 
 ## Motor Speed and Motor Temperature Sensor
 
@@ -268,9 +269,12 @@ Implemented commands:
 | `CYCLEIQ_COMMAND_SET_SUPPORT_MODE` | selects validated PAS or torque support |
 | `CYCLEIQ_COMMAND_SET_RIDE_MODE` | selects validated normal or mountain mode |
 | `CYCLEIQ_COMMAND_SET_WALK` | exact one-byte boolean; ON activates/refreshes Walk Mode and OFF clears it |
+| `CYCLEIQ_COMMAND_SET_CONTROLLER_ENABLED` | exact one-byte boolean; OFF clears Walk Mode, restores Normal ride mode, and commands zero phase current in the next 10 ms control iteration; ON re-enables normal assist from zero current |
 | `CYCLEIQ_COMMAND_SYNC_REQUEST` | immediately publishes every telemetry packet |
 
-Unknown commands are ignored after frame validation.
+Unknown commands are ignored after frame validation. Controller OFF is a quiet,
+logical state: the ESC remains powered and keeps CAN active so the display can
+turn assist back on.
 
 ## CAN Telemetry To Display
 
@@ -283,7 +287,7 @@ Scheduled telemetry:
 | `CYCLEIQ_TELEMETRY_LIVE` | 100 ms | speed in centi-km/h and signed watts |
 | `CYCLEIQ_TELEMETRY_THERMALS` | 250 ms | motor and controller temperature in °C |
 | `CYCLEIQ_TELEMETRY_BATTERY` | 500 ms | battery percentage and centivolts |
-| `CYCLEIQ_TELEMETRY_STATE` | 1000 ms, or immediately on change | applied gear, modes, and confirmed Walk Mode state |
+| `CYCLEIQ_TELEMETRY_STATE` | 1000 ms, or immediately on change | applied gear, modes, Walk Mode, and controller enabled state |
 
 Initial periodic transmissions are staggered; a sync request bypasses those
 offsets and emits state, live, thermals, and battery immediately.
@@ -317,6 +321,6 @@ These symbols or data paths exist but are not fully functional yet:
 - VESC app configuration is ignored.
 - Range is not estimated.
 - Commands do not have an acknowledgement packet; the state telemetry confirms
-  applied gear, modes, and Walk Mode.
+  applied gear, modes, Walk Mode, and controller enabled state.
 - Battery-current limiting is implemented as conservative phase-current trim,
   not a tuned PID controller.

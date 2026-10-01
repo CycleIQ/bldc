@@ -229,6 +229,17 @@ void cycleiq_control_stop(void) {
 }
 
 void cycleiq_control_loop(void) {
+  if (!cycleiq_data.motor_enabled) {
+    /*
+     * A display OFF command is a safety action. Do not ramp down a prior
+     * request: clear the controller output at the next 10 ms service tick.
+     */
+    phase_current_output_a = 0.0f;
+    walk_was_active = false;
+    mc_interface_set_current(0.0f);
+    return;
+  }
+
   bool walk_active = cycleiq_walk_is_active();
   if (!walk_active && walk_was_active) {
     walk_was_active = false;

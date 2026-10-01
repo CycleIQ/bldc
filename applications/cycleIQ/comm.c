@@ -26,6 +26,7 @@ static uint8_t last_gear;
 static cycleiq_support_mode_t last_support_mode;
 static cycleiq_ride_mode_t last_ride_mode;
 static bool last_walk_active;
+static bool last_controller_enabled;
 
 static void cycleiq_transmit_frame(const cycleiq_frame_t *frame) {
   comm_can_transmit_eid(frame->id, frame->data, frame->len);
@@ -76,13 +77,15 @@ static bool cycleiq_state_changed(bool walk_active) {
   return !state_sent || last_gear != cycleiq_data.current_gear ||
          last_support_mode != cycleiq_data.support_mode ||
          last_ride_mode != cycleiq_data.ride_mode ||
-         last_walk_active != walk_active;
+         last_walk_active != walk_active ||
+         last_controller_enabled != cycleiq_data.motor_enabled;
 }
 
 static void cycleiq_send_state(cycleiq_frame_t *frame, bool walk_active) {
   if (!cycleiq_telemetry_state(frame, cycleiq_data.current_gear,
                                cycleiq_data.support_mode,
-                               cycleiq_data.ride_mode, walk_active)) {
+                               cycleiq_data.ride_mode, walk_active,
+                               cycleiq_data.motor_enabled)) {
     return;
   }
 
@@ -92,6 +95,7 @@ static void cycleiq_send_state(cycleiq_frame_t *frame, bool walk_active) {
   last_support_mode = cycleiq_data.support_mode;
   last_ride_mode = cycleiq_data.ride_mode;
   last_walk_active = walk_active;
+  last_controller_enabled = cycleiq_data.motor_enabled;
 }
 
 static void cycleiq_send_live(cycleiq_frame_t *frame) {
@@ -166,6 +170,18 @@ static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
     if (cycleiq_read_command_walk(&frame, &enabled) &&
         (!enabled || cycleiq_data.motor_enabled)) {
       cycleiq_walk_set_enabled(enabled);
+    }
+    break;
+  }
+
+  case CYCLEIQ_COMMAND_SET_CONTROLLER_ENABLED: {
+    bool enabled;
+    if (cycleiq_read_command_controller_enabled(&frame, &enabled)) {
+      if (!enabled) {
+        cycleiq_walk_set_enabled(false);
+        (void)cycleiq_data_set_ride_mode(CYCLEIQ_RIDE_MODE_NORMAL);
+      }
+      cycleiq_data_set_motor_enabled(enabled);
     }
     break;
   }

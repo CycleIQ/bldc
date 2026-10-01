@@ -17,6 +17,7 @@
 #define TORQUE_SENSOR_SAMPLES 10
 #define TORQUE_SENSOR_FAST_FILTER_SAMPLES 6
 #define TORQUE_SENSOR_FAST_BLEND 0.20f
+#define TORQUE_VOLTAGE_FULL_SUPPORT 2.1f
 #define TORQUE_SENSOR_ACTIVE_THRESHOLD_PERCENT 0.03f
 #define TORQUE_SENSOR_RELEASE_THRESHOLD_PERCENT 0.015f
 #define TORQUE_SENSOR_LOW_TORQUE_ANGLE_NUMERATOR 1U
@@ -181,7 +182,8 @@ static void torque_angle_history_clear(void) {
 
 static float torque_percentage_from_voltage(float voltage) {
   float percentage =
-      utils_map(voltage, TORQUE_VOLTAGE_MIN, TORQUE_VOLTAGE_MAX, 0.0f, 1.0f);
+      utils_map(voltage, TORQUE_VOLTAGE_MIN, TORQUE_VOLTAGE_FULL_SUPPORT,
+                0.0f, 1.0f);
   utils_truncate_number(&percentage, 0.0f, 1.5f);
   return percentage;
 }
