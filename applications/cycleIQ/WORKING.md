@@ -8,7 +8,9 @@ shared `external/cycleiq-protocol` SDK.
 
 `app_custom_start()` initializes the app in this order:
 
-1. Resets cycleIQ runtime data and initializes Walk Mode inactive.
+1. Resets cycleIQ runtime data with assist disabled and initializes Walk Mode
+   inactive. The display must send a controller-enable command before assist
+   can run.
 2. Registers the CAN receive callback.
 3. Resets motor current output to 0 A.
 4. Initializes PAS and torque sensor state.

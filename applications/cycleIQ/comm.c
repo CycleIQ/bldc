@@ -78,14 +78,16 @@ static bool cycleiq_state_changed(bool walk_active) {
          last_support_mode != cycleiq_data.support_mode ||
          last_ride_mode != cycleiq_data.ride_mode ||
          last_walk_active != walk_active ||
-         last_controller_enabled != cycleiq_data.motor_enabled;
+         last_controller_enabled != cycleiq_data_is_motor_enabled();
 }
 
 static void cycleiq_send_state(cycleiq_frame_t *frame, bool walk_active) {
+  bool controller_enabled = cycleiq_data_is_motor_enabled();
+
   if (!cycleiq_telemetry_state(frame, cycleiq_data.current_gear,
                                cycleiq_data.support_mode,
                                cycleiq_data.ride_mode, walk_active,
-                               cycleiq_data.motor_enabled)) {
+                               controller_enabled)) {
     return;
   }
 
@@ -95,7 +97,7 @@ static void cycleiq_send_state(cycleiq_frame_t *frame, bool walk_active) {
   last_support_mode = cycleiq_data.support_mode;
   last_ride_mode = cycleiq_data.ride_mode;
   last_walk_active = walk_active;
-  last_controller_enabled = cycleiq_data.motor_enabled;
+  last_controller_enabled = controller_enabled;
 }
 
 static void cycleiq_send_live(cycleiq_frame_t *frame) {
@@ -168,7 +170,7 @@ static bool cycleIQ_CAN_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
   case CYCLEIQ_COMMAND_SET_WALK: {
     bool enabled;
     if (cycleiq_read_command_walk(&frame, &enabled) &&
-        (!enabled || cycleiq_data.motor_enabled)) {
+        (!enabled || cycleiq_data_is_motor_enabled())) {
       cycleiq_walk_set_enabled(enabled);
     }
     break;

@@ -52,7 +52,7 @@ cycleiq_data_t cycleiq_data = {
     .max_gear = MAX_GEAR,
     .support_mode = CYCLEIQ_SUPPORT_MODE_PAS,
     .ride_mode = CYCLEIQ_RIDE_MODE_NORMAL, // Default ride mode
-    .motor_enabled = true,
+    .motor_enabled = false,
     .speed_mps = 0.0f,
     .trip_distance_km = 0.0f,
     .trip_time_s = 0u,
@@ -137,7 +137,7 @@ void cycleiq_data_reset(void)
   cycleiq_data.current_gear = 0;                     // Reset to default gear
   cycleiq_data.support_mode = CYCLEIQ_SUPPORT_MODE_PAS;
   cycleiq_data.ride_mode = CYCLEIQ_RIDE_MODE_NORMAL; // Reset to default ride mode
-  cycleiq_data.motor_enabled = true;
+  cycleiq_data.motor_enabled = false;
   cycleiq_data.speed_mps = 0.0f;
   cycleiq_data.trip_distance_km = 0.0f;
   cycleiq_data.trip_time_s = 0u;
@@ -342,5 +342,17 @@ bool cycleiq_data_set_ride_mode(cycleiq_ride_mode_t mode) {
 }
 
 void cycleiq_data_set_motor_enabled(bool enabled) {
+  chSysLock();
   cycleiq_data.motor_enabled = enabled;
+  chSysUnlock();
+}
+
+bool cycleiq_data_is_motor_enabled(void) {
+  bool enabled;
+
+  chSysLock();
+  enabled = cycleiq_data.motor_enabled;
+  chSysUnlock();
+
+  return enabled;
 }

@@ -140,8 +140,8 @@ static float walk_speed_taper_factor(void) {
   return factor;
 }
 
-static float support_factor(void) {
-  if (!cycleiq_data.motor_enabled) {
+static float support_factor(bool controller_enabled) {
+  if (!controller_enabled) {
     return 0.0f;
   }
 
@@ -229,7 +229,8 @@ void cycleiq_control_stop(void) {
 }
 
 void cycleiq_control_loop(void) {
-  if (!cycleiq_data.motor_enabled) {
+  bool controller_enabled = cycleiq_data_is_motor_enabled();
+  if (!controller_enabled) {
     /*
      * A display OFF command is a safety action. Do not ramp down a prior
      * request: clear the controller output at the next 10 ms service tick.
@@ -255,13 +256,11 @@ void cycleiq_control_loop(void) {
   float torque_speed_taper_factor = 0.0f;
   if (walk_active) {
     gear_limits = gear_limits_for_current(CYCLEIQ_WALK_BATTERY_CURRENT_A);
-    demand_factor = cycleiq_data.motor_enabled
-                        ? walk_speed_taper_factor()
-                        : 0.0f;
+    demand_factor = walk_speed_taper_factor();
   } else {
     gear_limits =
         gear_limits_for_gear(cycleiq_data.current_gear, cycleiq_data.ride_mode);
-    torque_support_factor = support_factor();
+    torque_support_factor = support_factor(controller_enabled);
     torque_speed_taper_factor = speed_taper_factor();
     demand_factor = torque_support_factor * torque_speed_taper_factor;
   }
@@ -272,7 +271,7 @@ void cycleiq_control_loop(void) {
   float target_phase_current_a = gear_limits.phase_current_limit_a * demand_factor;
   bool release_fast = target_battery_current_a <= 0.0f;
   if (!walk_active && cycleiq_data.support_mode == CYCLEIQ_SUPPORT_MODE_TORQUE &&
-      cycleiq_data.motor_enabled && !cycleiq_ts_should_release_fast() &&
+      controller_enabled && !cycleiq_ts_should_release_fast() &&
       torque_support_factor <= 0.0f && torque_speed_taper_factor > 0.0f) {
     /*
      * A momentary zero torque request is part of normal pedaling. Fast release

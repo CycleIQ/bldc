@@ -56,6 +56,7 @@ bool cycleiq_data_set_gear(uint8_t gear);
 bool cycleiq_data_set_support_mode(cycleiq_support_mode_t mode);
 bool cycleiq_data_set_ride_mode(cycleiq_ride_mode_t mode);
 void cycleiq_data_set_motor_enabled(bool enabled);
+bool cycleiq_data_is_motor_enabled(void);
 void cycleiq_data_apply_ride_mode_limits(void);
 
 extern cycleiq_config_t cycleiq_config;
